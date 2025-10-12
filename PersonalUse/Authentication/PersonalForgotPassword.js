@@ -62,6 +62,8 @@ export default function ForgotPassword({ navigation }) {
           <View style={styles.gradientCircle1} />
           <View style={styles.gradientCircle2} />
 
+          
+
           {/* Success Icon */}
           <View style={styles.successIconContainer}>
             <View style={styles.successIconOuter}>
@@ -90,7 +92,7 @@ export default function ForgotPassword({ navigation }) {
             <TouchableOpacity 
               style={styles.resendButton}
               onPress={handleResendEmail}
-              activeOpacity={0.9}
+              activeOpacity={0.7}
             >
               <Text style={styles.resendButtonText}>Resend Email</Text>
             </TouchableOpacity>
@@ -99,7 +101,7 @@ export default function ForgotPassword({ navigation }) {
             <TouchableOpacity 
               style={styles.backButton}
               onPress={handleBackToLogin}
-              activeOpacity={0.9}
+              activeOpacity={0.7}
             >
               <Text style={styles.backButtonText}>Back to Login</Text>
               <View style={styles.buttonShine} />
@@ -128,7 +130,7 @@ export default function ForgotPassword({ navigation }) {
         <TouchableOpacity 
           style={styles.backArrowButton}
           onPress={handleBackToLogin}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
         >
           {/* Replace with: <Icon name="arrow-left" size={20} color="#1F2937" /> */}
           <Text style={styles.backArrow}>←</Text>
@@ -242,23 +244,17 @@ const styles = StyleSheet.create({
   },
   backArrowButton: {
     position: 'absolute',
-    top: 20,
+    top: 50,
     left: 24,
     width: 44,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(108, 79, 79, 0.2)',
     borderRadius: 22,
     zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 13, 13, 0.3)',
   },
   backArrow: {
     fontSize: 20,

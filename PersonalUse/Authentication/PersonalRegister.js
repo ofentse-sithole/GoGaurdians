@@ -38,6 +38,10 @@ export default function PersonalRegister({ navigation }) {
     // Add your registration logic here
   };
 
+  const handleBackToLogin = () => {
+    navigation.navigate('PersonalLogin');
+  };
+
   const handleLogin = () => {
     navigation?.navigate('PersonalLogin');
   };
@@ -60,6 +64,14 @@ export default function PersonalRegister({ navigation }) {
         <View style={styles.gradientCircle1} />
         <View style={styles.gradientCircle2} />
 
+        {/* Back Button */}
+                <TouchableOpacity 
+                  style={styles.backArrowButton}
+                  onPress={handleBackToLogin}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backArrow}>←</Text>
+                </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoContainer}>
@@ -281,6 +293,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAFAFA',
+    paddingTop: 40,
   },
   scrollContent: {
     flexGrow: 1,
@@ -529,5 +542,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6366F1',
     fontWeight: '700',
+  },
+  backArrowButton: {
+    position: 'absolute',
+    top: 50,
+    left: 24,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 80, 108, 0.2)',
+    borderRadius: 22,
+    zIndex: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(13, 13, 77, 0.3)',
   },
 });

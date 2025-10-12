@@ -13,12 +13,12 @@ const App = () => {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="PersonalLogin">
-        <Stack.Screen name="PersonalLogin" component={PersonalLogin} />
-        <Stack.Screen name="PersonalRegister" component={PersonalRegister} />
-        <Stack.Screen name="PersonalForgotPassword" component={PersonalForgotPassword} />
-        <Stack.Screen name="BusinessLogin" component={BusinessLogin} />
-        <Stack.Screen name="BusinessRegister" component={BusinessRegister} />
-        <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} />
+        <Stack.Screen name="PersonalLogin" component={PersonalLogin} options={{ headerShown: false }} />
+        <Stack.Screen name="PersonalRegister" component={PersonalRegister} options={{ headerShown: false }} />
+        <Stack.Screen name="PersonalForgotPassword" component={PersonalForgotPassword} options={{ headerShown: false }} />
+        <Stack.Screen name="BusinessLogin" component={BusinessLogin} options={{ headerShown: false }} />
+        <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
+        <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
