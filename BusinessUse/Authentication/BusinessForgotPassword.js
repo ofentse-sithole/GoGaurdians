@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 100,
+    marginTop: 40,
     marginBottom: 24,
     zIndex: 1,
   },
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   titleSection: {
+    marginTop: -20,
     marginBottom: 32,
     zIndex: 1,
     alignItems: 'center',

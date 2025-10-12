@@ -36,6 +36,10 @@ export default function BusinessRegister({ navigation }) {
     });
   };
 
+  const handleBackToLogin = () => {
+    navigation.navigate('BusinessLogin');
+  };
+
   const handleLogin = () => {
     navigation.navigate('BusinessLogin');
   };
@@ -54,18 +58,16 @@ export default function BusinessRegister({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Personal Register Navigation */}
-        <TouchableOpacity 
-          style={styles.personalRegisterButton}
-          onPress={handlePersonalRegister}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.arrow}>←</Text>
-          <Text style={styles.personalRegisterText}>Personal Sign Up</Text>
-        </TouchableOpacity>
 
         {/* Header Section with Accent */}
-        <View style={styles.headerAccent} />
+        {/* Back Button */}
+                <TouchableOpacity 
+                  style={styles.backArrowButton}
+                  onPress={handleBackToLogin}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backArrow}>←</Text>
+                </TouchableOpacity>
 
         {/* Logo Section */}
         <View style={styles.logoContainer}>
@@ -243,16 +245,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 32,
   },
-  headerAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 200,
-    backgroundColor: '#1E40AF',
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
   personalRegisterButton: {
     position: 'absolute',
     top: 50,
@@ -275,12 +267,12 @@ const styles = StyleSheet.create({
   },
   arrow: {
     fontSize: 18,
-    color: '#FFFFFF',
+    color: '#313f5fff',
     fontWeight: '600',
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 100,
+    marginTop: 40,
     marginBottom: 24,
     zIndex: 1,
   },
@@ -310,6 +302,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   titleSection: {
+    marginTop: -20,
     marginBottom: 32,
     zIndex: 1,
     alignItems: 'center',
@@ -440,5 +433,19 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'center',
     fontWeight: '500',
+  },
+  backArrowButton: {
+    position: 'absolute',
+    top: 50,
+    left: 24,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 83, 108, 0.2)',
+    borderRadius: 22,
+    zIndex: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(13, 13, 77, 0.3)',
   },
 });

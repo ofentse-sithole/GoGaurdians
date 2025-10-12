@@ -7,14 +7,18 @@ import {
   StyleSheet, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  Animated
 } from 'react-native';
+import { PanGestureHandler } from 'react-native-gesture-handler';
+
 
 export default function BusinessLogin({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [sliderPosition] = useState(new Animated.Value(0));
 
   const handleLogin = () => {
     console.log('Business login pressed', { email, password });
@@ -33,6 +37,45 @@ export default function BusinessLogin({ navigation }) {
     navigation.navigate('PersonalLogin');
   };
 
+  const onSliderGestureEvent = Animated.event(
+    [{ nativeEvent: { translationX: sliderPosition } }],
+    { useNativeDriver: false }
+  );
+
+  const onSliderHandlerStateChange = (event) => {
+    if (event.nativeEvent.state === 5) { // GESTURE_STATE_END
+      const { translationX } = event.nativeEvent;
+      
+      if (translationX > 150) { // Threshold for successful swipe
+        // Complete the slide animation
+        Animated.timing(sliderPosition, {
+          toValue: 280, // Full width minus button width
+          duration: 200,
+          useNativeDriver: false,
+        }).start(() => {
+          handlePersonalLogin();
+        });
+      } else {
+        // Reset to original position
+        Animated.timing(sliderPosition, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+      }
+    }
+  };
+
+  const handleSliderPress = () => {
+    Animated.timing(sliderPosition, {
+      toValue: 280,
+      duration: 300,
+      useNativeDriver: false,
+    }).start(() => {
+      handlePersonalLogin();
+    });
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -43,15 +86,6 @@ export default function BusinessLogin({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Personal Login Navigation */}
-        <TouchableOpacity 
-          style={styles.personalLoginButton}
-          onPress={handlePersonalLogin}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.arrow}>←</Text>
-          <Text style={styles.personalLoginText}>Personal Login</Text>
-        </TouchableOpacity>
 
         {/* Header Section with Accent */}
         <View style={styles.headerAccent} />
@@ -104,7 +138,7 @@ export default function BusinessLogin({ navigation }) {
                 onPress={handleForgotPassword}
                 activeOpacity={0.7}
               >
-                <Text style={styles.forgotPasswordText}>Forgot?</Text>
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
             </View>
             <View style={[
@@ -160,6 +194,44 @@ export default function BusinessLogin({ navigation }) {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Bottom Slider */}
+      <View style={styles.sliderContainer}>
+        <View style={styles.sliderTrack}>
+          <Text style={styles.sliderText}>Slide for Personal Login</Text>
+          <Text style={styles.sliderArrows}>→ → →</Text>
+          
+          <PanGestureHandler
+            onGestureEvent={onSliderGestureEvent}
+            onHandlerStateChange={onSliderHandlerStateChange}
+          >
+            <Animated.View
+              style={[
+                styles.sliderButton,
+                {
+                  transform: [
+                    {
+                      translateX: sliderPosition.interpolate({
+                        inputRange: [0, 280],
+                        outputRange: [0, 280],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.sliderButtonInner}
+                onPress={handleSliderPress}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sliderButtonText}>👤</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </PanGestureHandler>
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -172,17 +244,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingBottom: 32,
-  },
-  headerAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 200,
-    backgroundColor: '#ffffffff', //change to desired accent color
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    paddingTop: -120,
+    paddingBottom: 120, // Extra space for slider
   },
   personalLoginButton: {
     position: 'absolute',
@@ -204,14 +267,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
-  arrow: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 100,
+    marginTop: 40,
     marginBottom: 24,
     zIndex: 1,
   },
@@ -249,6 +307,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   titleSection: {
+    marginTop: -40,
     marginBottom: 32,
     zIndex: 1,
     alignItems: 'center',
@@ -380,5 +439,62 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'center',
     fontWeight: '500',
+  },
+  // Slider styles
+  sliderContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  sliderTrack: {
+    height: 60,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  sliderText: {
+    position: 'absolute',
+    left: 70,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  sliderArrows: {
+    position: 'absolute',
+    right: 20,
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  sliderButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1E40AF',
+    shadowColor: '#1E40AF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sliderButtonInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sliderButtonText: {
+    fontSize: 20,
   },
 });

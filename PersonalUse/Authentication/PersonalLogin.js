@@ -7,14 +7,17 @@ import {
   StyleSheet, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  Animated
 } from 'react-native';
+import { PanGestureHandler } from 'react-native-gesture-handler';
 
 export default function PersonalLogin({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [sliderPosition] = useState(new Animated.Value(0));
 
   const handleLogin = () => {
     console.log('Login pressed', { email, password });
@@ -33,6 +36,45 @@ export default function PersonalLogin({ navigation }) {
     navigation?.navigate('BusinessLogin');
   };
 
+  const onSliderGestureEvent = Animated.event(
+    [{ nativeEvent: { translationX: sliderPosition } }],
+    { useNativeDriver: false }
+  );
+
+  const onSliderHandlerStateChange = (event) => {
+    if (event.nativeEvent.state === 5) { // GESTURE_STATE_END
+      const { translationX } = event.nativeEvent;
+      
+      if (translationX > 150) { // Threshold for successful swipe
+        // Complete the slide animation
+        Animated.timing(sliderPosition, {
+          toValue: 280, // Full width minus button width
+          duration: 200,
+          useNativeDriver: false,
+        }).start(() => {
+          handleBusinessLogin();
+        });
+      } else {
+        // Reset to original position
+        Animated.timing(sliderPosition, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+      }
+    }
+  };
+
+  const handleSliderPress = () => {
+    Animated.timing(sliderPosition, {
+      toValue: 280,
+      duration: 300,
+      useNativeDriver: false,
+    }).start(() => {
+      handleBusinessLogin();
+    });
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -47,15 +89,6 @@ export default function PersonalLogin({ navigation }) {
         <View style={styles.gradientCircle1} />
         <View style={styles.gradientCircle2} />
 
-        {/* Business Login Button - Top Right */}
-        <TouchableOpacity 
-          style={styles.businessLoginButton}
-          onPress={handleBusinessLogin}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.businessLoginText}>For Business</Text>
-          <Text style={styles.arrow}>→</Text>
-        </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoContainer}>
@@ -105,7 +138,7 @@ export default function PersonalLogin({ navigation }) {
                 onPress={handleForgotPassword}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Text style={styles.forgotPasswordText}>Forgot?</Text>
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
             </View>
             <View style={[
@@ -153,6 +186,44 @@ export default function PersonalLogin({ navigation }) {
           </View>
         </View>
       </ScrollView>
+
+      {/* Bottom Slider */}
+      <View style={styles.sliderContainer}>
+        <View style={styles.sliderTrack}>
+          <Text style={styles.sliderText}>Slide for Business Login</Text>
+          <Text style={styles.sliderArrows}>→ → →</Text>
+          
+          <PanGestureHandler
+            onGestureEvent={onSliderGestureEvent}
+            onHandlerStateChange={onSliderHandlerStateChange}
+          >
+            <Animated.View
+              style={[
+                styles.sliderButton,
+                {
+                  transform: [
+                    {
+                      translateX: sliderPosition.interpolate({
+                        inputRange: [0, 280],
+                        outputRange: [0, 280],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.sliderButtonInner}
+                onPress={handleSliderPress}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sliderButtonText}>🏢</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </PanGestureHandler>
+        </View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -161,11 +232,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FAFAFA',
+
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 60,
+    paddingTop: -40,
+    paddingBottom: 140, // Extra space for slider
   },
   gradientCircle1: {
     position: 'absolute',
@@ -394,5 +467,62 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6366F1',
     fontWeight: '700',
+  },
+  // Slider styles
+  sliderContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  sliderTrack: {
+    height: 60,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  sliderText: {
+    position: 'absolute',
+    left: 70,
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  sliderArrows: {
+    position: 'absolute',
+    right: 20,
+    fontSize: 16,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  sliderButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#6366F1',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sliderButtonInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sliderButtonText: {
+    fontSize: 20,
   },
 });

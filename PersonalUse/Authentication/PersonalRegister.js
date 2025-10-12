@@ -60,16 +60,6 @@ export default function PersonalRegister({ navigation }) {
         <View style={styles.gradientCircle1} />
         <View style={styles.gradientCircle2} />
 
-        {/* Business Register Button - Top Right */}
-        <TouchableOpacity 
-          style={styles.businessRegisterButton}
-          onPress={handleBusinessRegister}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.businessRegisterText}>For Business</Text>
-          {/* Replace with: <Icon name="arrow-right" size={16} color="#fff" /> */}
-          <Text style={styles.arrow}>→</Text>
-        </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoContainer}>
@@ -295,7 +285,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 60,
+    paddingTop: -20,
     paddingBottom: 40,
   },
   gradientCircle1: {

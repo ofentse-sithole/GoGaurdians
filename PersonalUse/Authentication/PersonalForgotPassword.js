@@ -265,9 +265,9 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     fontWeight: '600',
   },
-  logoContainer: {
+   logoContainer: {
     alignItems: 'center',
-    marginTop: 60,
+    marginTop: 0,
     marginBottom: 24,
   },
   logoPlaceholder: {
