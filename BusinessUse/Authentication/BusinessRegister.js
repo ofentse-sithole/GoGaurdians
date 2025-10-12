@@ -16,9 +16,13 @@ export default function BusinessRegister({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [businessNameFocused, setBusinessNameFocused] = useState(false);
+  const [registrationNumberFocused, setRegistrationNumberFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
   const handleRegister = () => {
-    // Validate passwords match
     if (password !== confirmPassword) {
       alert('Passwords do not match');
       return;
@@ -30,16 +34,13 @@ export default function BusinessRegister({ navigation }) {
       email, 
       password 
     });
-    // Add your business registration logic here
   };
 
   const handleLogin = () => {
-    // Navigate back to business login screen
     navigation.navigate('BusinessLogin');
   };
 
   const handlePersonalRegister = () => {
-    // Navigate to personal register screen
     navigation.navigate('PersonalRegister');
   };
 
@@ -51,120 +52,181 @@ export default function BusinessRegister({ navigation }) {
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Personal Register Arrow */}
+        {/* Personal Register Navigation */}
         <TouchableOpacity 
           style={styles.personalRegisterButton}
           onPress={handlePersonalRegister}
+          activeOpacity={0.7}
         >
           <Text style={styles.arrow}>←</Text>
           <Text style={styles.personalRegisterText}>Personal Sign Up</Text>
         </TouchableOpacity>
 
-        {/* Logo */}
+        {/* Header Section with Accent */}
+        <View style={styles.headerAccent} />
+
+        {/* Logo Section */}
         <View style={styles.logoContainer}>
-          {/* Option 1: Use Image component with your logo */}
-          {/* <Image 
-            source={require('./assets/logo.png')} 
-            style={styles.logo}
-            resizeMode="contain"
-          /> */}
-          
-          {/* Option 2: Placeholder (remove when you add actual logo) */}
           <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoText}>LOGO</Text>
+            <Text style={styles.logoText}>B</Text>
+          </View>
+          <Text style={styles.companyName}>Business Portal</Text>
+        </View>
+
+        {/* Title Section */}
+        <View style={styles.titleSection}>
+          <Text style={styles.title}>Create Business Account</Text>
+          <Text style={styles.subtitle}>Register your business today</Text>
+        </View>
+
+        {/* Registration Form */}
+        <View style={styles.formContainer}>
+          {/* Business Name Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Business Name</Text>
+            <View style={[
+              styles.inputWrapper,
+              businessNameFocused && styles.inputWrapperFocused
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your business name"
+                placeholderTextColor="#9CA3AF"
+                value={businessName}
+                onChangeText={setBusinessName}
+                onFocus={() => setBusinessNameFocused(true)}
+                onBlur={() => setBusinessNameFocused(false)}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
+
+          {/* Registration Number Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Registration Number</Text>
+            <View style={[
+              styles.inputWrapper,
+              registrationNumberFocused && styles.inputWrapperFocused
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter business registration number"
+                placeholderTextColor="#9CA3AF"
+                value={registrationNumber}
+                onChangeText={setRegistrationNumber}
+                onFocus={() => setRegistrationNumberFocused(true)}
+                onBlur={() => setRegistrationNumberFocused(false)}
+              />
+            </View>
+          </View>
+
+          {/* Email Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Business Email</Text>
+            <View style={[
+              styles.inputWrapper,
+              emailFocused && styles.inputWrapperFocused
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="name@company.com"
+                placeholderTextColor="#9CA3AF"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+              />
+            </View>
+          </View>
+
+          {/* Password Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Password</Text>
+            <View style={[
+              styles.inputWrapper,
+              passwordFocused && styles.inputWrapperFocused
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Create a password"
+                placeholderTextColor="#9CA3AF"
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
+          {/* Confirm Password Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Confirm Password</Text>
+            <View style={[
+              styles.inputWrapper,
+              confirmPasswordFocused && styles.inputWrapperFocused
+            ]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm your password"
+                placeholderTextColor="#9CA3AF"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onFocus={() => setConfirmPasswordFocused(true)}
+                onBlur={() => setConfirmPasswordFocused(false)}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
+          {/* Terms and Conditions */}
+          <Text style={styles.termsText}>
+            By signing up, you agree to our{' '}
+            <Text style={styles.termsLink}>Terms of Service</Text>
+            {' '}and{' '}
+            <Text style={styles.termsLink}>Privacy Policy</Text>
+          </Text>
+
+          {/* Register Button */}
+          <TouchableOpacity 
+            style={styles.registerButton}
+            onPress={handleRegister}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.registerButtonText}>Create Account</Text>
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.divider} />
+          </View>
+
+          {/* Login Section */}
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already have a business account?</Text>
+            <TouchableOpacity 
+              onPress={handleLogin}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.loginLink}>Sign In</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Title */}
-        <Text style={styles.title}>Create Business Account</Text>
-        <Text style={styles.subtitle}>Register your business today</Text>
-
-        {/* Business Name Input */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Business Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your business name"
-            value={businessName}
-            onChangeText={setBusinessName}
-            autoCapitalize="words"
-          />
-        </View>
-
-        {/* Registration Number Input */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Registration Number</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter business registration number"
-            value={registrationNumber}
-            onChangeText={setRegistrationNumber}
-          />
-        </View>
-
-        {/* Email Input */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Business Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your business email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-          />
-        </View>
-
-        {/* Password Input */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Create a password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-        </View>
-
-        {/* Confirm Password Input */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Confirm Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm your password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-        </View>
-
-        {/* Terms and Conditions */}
-        <Text style={styles.termsText}>
-          By signing up, you agree to our{' '}
-          <Text style={styles.termsLink}>Terms of Service</Text>
-          {' '}and{' '}
-          <Text style={styles.termsLink}>Privacy Policy</Text>
-        </Text>
-
-        {/* Register Button */}
-        <TouchableOpacity 
-          style={styles.registerButton}
-          onPress={handleRegister}
-        >
-          <Text style={styles.registerButtonText}>Sign Up</Text>
-        </TouchableOpacity>
-
-        {/* Login Link */}
-        <View style={styles.loginContainer}>
-          <Text style={styles.loginText}>Already have a business account? </Text>
-          <TouchableOpacity onPress={handleLogin}>
-            <Text style={styles.loginLink}>Login</Text>
-          </TouchableOpacity>
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Secure business registration • Protected by encryption
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -174,70 +236,107 @@ export default function BusinessRegister({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F8FAFC',
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+  },
+  headerAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    backgroundColor: '#1E40AF',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
   personalRegisterButton: {
     position: 'absolute',
-    top: 20,
+    top: 50,
     left: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     zIndex: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   personalRegisterText: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '600',
     marginLeft: 4,
   },
   arrow: {
     fontSize: 18,
-    color: '#333',
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 32,
-  },
-  logo: {
-    width: 120,
-    height: 120,
+    marginTop: 100,
+    marginBottom: 24,
+    zIndex: 1,
   },
   logoPlaceholder: {
-    width: 120,
-    height: 120,
-    backgroundColor: '#FF6B35',
-    borderRadius: 60,
+    width: 90,
+    height: 90,
+    backgroundColor: '#1E40AF',
+    borderRadius: 45,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   logoText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  companyName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 12,
+    letterSpacing: 0.5,
+  },
+  titleSection: {
+    marginBottom: 32,
+    zIndex: 1,
+    alignItems: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#0F172A',
     marginBottom: 8,
+    letterSpacing: -0.5,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#64748B',
+    fontWeight: '400',
     textAlign: 'center',
-    marginBottom: 32,
+  },
+  formContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   inputContainer: {
     marginBottom: 20,
@@ -245,54 +344,101 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#1E293B',
     marginBottom: 8,
   },
+  inputWrapper: {
+    height: 52,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    transition: 'all 0.3s',
+  },
+  inputWrapperFocused: {
+    borderColor: '#1E40AF',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#1E40AF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   input: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    flex: 1,
     paddingHorizontal: 16,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '500',
   },
   termsText: {
     fontSize: 12,
-    color: '#666',
+    color: '#64748B',
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 18,
   },
   termsLink: {
-    color: '#FF6B35',
+    color: '#1E40AF',
     fontWeight: '600',
   },
   registerButton: {
-    height: 50,
-    backgroundColor: '#FF6B35',
-    borderRadius: 8,
+    height: 52,
+    backgroundColor: '#1E40AF',
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    shadowColor: '#1E40AF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   registerButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginHorizontal: 16,
+    fontWeight: '500',
   },
   loginContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
   },
   loginText: {
     fontSize: 14,
-    color: '#666',
+    color: '#64748B',
+    marginBottom: 8,
+    fontWeight: '500',
   },
   loginLink: {
-    fontSize: 14,
-    color: '#FF6B35',
-    fontWeight: '600',
+    fontSize: 15,
+    color: '#1E40AF',
+    fontWeight: '700',
+  },
+  footer: {
+    marginTop: 32,
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
