@@ -255,7 +255,7 @@ export default function BusinessRegister({ navigation }) {
           <View style={styles.logoPlaceholder}>
             <Text style={styles.logoText}>B</Text>
           </View>
-          <Text style={styles.companyName}>Business Portal</Text>
+          <Text style={styles.companyName}>Business Profile</Text>
         </View>
 
         {/* Title Section */}
