@@ -8,16 +8,20 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
-  Alert 
+  Alert,
+  ActivityIndicator
 } from 'react-native';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from './firebaseConfig'; // Adjust path as needed
 
 export default function BusinessForgotPassword({ navigation }) {
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleResetPassword = () => {
-    if (!email) {
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
       Alert.alert('Error', 'Please enter your business email address');
       return;
     }
@@ -28,17 +32,57 @@ export default function BusinessForgotPassword({ navigation }) {
       return;
     }
 
-    console.log('Reset password for business:', email);
-    setIsSubmitted(true);
+    setLoading(true);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      console.log('Business password reset email sent to:', email);
+      setIsSubmitted(true);
+    } catch (error) {
+      console.error('Business password reset error:', error);
+      
+      let errorMessage = 'An error occurred while sending reset email';
+      
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No business account found with this email address';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many requests. Please try again later';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Failed to send reset email';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
-    navigation.navigate('BusinessLogin');
+    navigation?.navigate('BusinessLogin');
   };
 
-  const handleResendEmail = () => {
-    console.log('Resend email to:', email);
-    Alert.alert('Success', 'Reset link has been resent to your email');
+  const handleResendEmail = async () => {
+    setLoading(true);
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert('Success', 'Reset link has been resent to your business email');
+      console.log('Business reset email resent to:', email);
+    } catch (error) {
+      console.error('Resend error:', error);
+      Alert.alert('Error', 'Failed to resend email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (isSubmitted) {
@@ -70,24 +114,30 @@ export default function BusinessForgotPassword({ navigation }) {
             </Text>
             <Text style={styles.emailText}>{email}</Text>
             <Text style={styles.instructionText}>
-              Click the link in the email to reset your password. If you don't see it, check your spam folder.
+              Click the link in the email to reset your business account password. If you don't see it, check your spam folder.
             </Text>
           </View>
 
           {/* Action Buttons */}
           <View style={styles.formContainer}>
             <TouchableOpacity 
-              style={styles.resendButton}
+              style={[styles.resendButton, loading && styles.buttonDisabled]}
               onPress={handleResendEmail}
               activeOpacity={0.8}
+              disabled={loading}
             >
-              <Text style={styles.resendButtonText}>Resend Email</Text>
+              {loading ? (
+                <ActivityIndicator color="#1E40AF" size="small" />
+              ) : (
+                <Text style={styles.resendButtonText}>Resend Email</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.backButton}
+              style={[styles.backButton, loading && styles.backButtonDisabled]}
               onPress={handleBackToLogin}
               activeOpacity={0.8}
+              disabled={loading}
             >
               <Text style={styles.backButtonText}>Back to Login</Text>
             </TouchableOpacity>
@@ -119,6 +169,7 @@ export default function BusinessForgotPassword({ navigation }) {
           style={styles.backArrowButton}
           onPress={handleBackToLogin}
           activeOpacity={0.7}
+          disabled={loading}
         >
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
@@ -162,17 +213,23 @@ export default function BusinessForgotPassword({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
 
           {/* Reset Password Button */}
           <TouchableOpacity 
-            style={styles.resetButton}
+            style={[styles.resetButton, loading && styles.resetButtonDisabled]}
             onPress={handleResetPassword}
             activeOpacity={0.8}
+            disabled={loading}
           >
-            <Text style={styles.resetButtonText}>Send Reset Link</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.resetButtonText}>Send Reset Link</Text>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -184,10 +241,11 @@ export default function BusinessForgotPassword({ navigation }) {
 
           {/* Back to Login Link */}
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Remember your password?</Text>
+            <Text style={styles.loginText}>Remember your password? </Text>
             <TouchableOpacity 
               onPress={handleBackToLogin}
               activeOpacity={0.7}
+              disabled={loading}
             >
               <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
@@ -242,7 +300,7 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: '#FFFFFF',
+    color: '#1E40AF',
     fontWeight: '600',
   },
   logoContainer: {
@@ -272,7 +330,7 @@ const styles = StyleSheet.create({
   companyName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1E40AF',
     marginTop: 12,
     letterSpacing: 0.5,
   },
@@ -353,6 +411,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  resetButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0.1,
+  },
   resetButtonText: {
     fontSize: 16,
     fontWeight: '700',
@@ -377,11 +439,12 @@ const styles = StyleSheet.create({
   },
   loginContainer: {
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   loginText: {
     fontSize: 14,
     color: '#64748B',
-    marginBottom: 8,
     fontWeight: '500',
   },
   loginLink: {
@@ -478,5 +541,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  backButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0.1,
+  },
+  buttonDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#D1D5DB',
   },
 });
