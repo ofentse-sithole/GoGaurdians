@@ -12,7 +12,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from './firebaseConfig'; // Adjust path as needed
+import { auth } from '../../firebaseConfig';
 
 export default function BusinessForgotPassword({ navigation }) {
   const [email, setEmail] = useState('');
