@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler';
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import PersonalLogin from "./PersonalUse/Authentication/PersonalLogin";
@@ -6,6 +7,9 @@ import PersonalForgotPassword from "./PersonalUse/Authentication/PersonalForgotP
 import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
 import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
 import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
+import CommunitySafetyAlerts from "./components/CommunitySafetyAlerts";
+import EmergencyButton from "./components/EmergencyButton";
+import EmergencyContactList from "./components/EmergencyContactList";
 
 const Stack = createStackNavigator();
 
@@ -19,7 +23,10 @@ const App = () => {
         <Stack.Screen name="BusinessLogin" component={BusinessLogin} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
+        <Stack.Screen name="CommunitySafetyAlerts" component={CommunitySafetyAlerts} options={{ headerShown: false }} />
+        <Stack.Screen name="EmergencyContacts" component={EmergencyContactList} options={{ headerShown: true, title: 'Emergency Contacts' }} />
       </Stack.Navigator>
+      <EmergencyButton />
     </NavigationContainer>
   );
 }
