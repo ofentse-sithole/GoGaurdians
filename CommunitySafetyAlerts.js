@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Animated
+  Animated,
+  Image,
+  Alert,
 } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 
 export default function CommunitySafetyAlerts({ navigation }) {
   const [title, setTitle] = useState('');
@@ -19,15 +23,118 @@ export default function CommunitySafetyAlerts({ navigation }) {
   const [descriptionFocused, setDescriptionFocused] = useState(false);
   const [sliderPosition] = useState(new Animated.Value(0));
 
+  // New states for image and location
+  const [imageUri, setImageUri] = useState(null);
+  const [location, setLocation] = useState(null);
+  const [address, setAddress] = useState(null);
+
+  useEffect(() => {
+    // Request permissions on mount
+    (async () => {
+      try {
+        const mediaPerm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
+        const locPerm = await Location.requestForegroundPermissionsAsync();
+
+        if (!mediaPerm.granted && !cameraPerm.granted) {
+          console.warn('Image permissions not granted');
+        }
+        if (!locPerm.granted) {
+          console.warn('Location permission not granted');
+        }
+      } catch (e) {
+        console.warn('Permission request error', e);
+      }
+    })();
+  }, []);
+
   const handleSubmitAlert = () => {
-    console.log('Safety alert submitted:', { title, description });
+    const payload = {
+      title,
+      description,
+      image: imageUri,
+      location,
+      address,
+    };
+    console.log('Safety alert submitted:', payload);
     // Add logic to send alert to backend or local storage
     setTitle('');
     setDescription('');
+    setImageUri(null);
+    setLocation(null);
+    setAddress(null);
+    Alert.alert('Submitted', 'Your safety alert has been submitted.');
   };
 
   const handleViewAlerts = () => {
     navigation.navigate('AlertFeed'); // Navigate to a screen showing recent alerts
+  };
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
+
+      // handle both SDK versions (result.cancelled / result.canceled / result.assets)
+      if (result.cancelled === false || result.canceled === false || (result.assets && result.assets.length)) {
+        const uri = result.assets ? result.assets[0].uri : result.uri;
+        setImageUri(uri);
+      }
+    } catch (e) {
+      console.warn('Image pick error', e);
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
+
+      if (result.cancelled === false || result.canceled === false || (result.assets && result.assets.length)) {
+        const uri = result.assets ? result.assets[0].uri : result.uri;
+        setImageUri(uri);
+      }
+    } catch (e) {
+      console.warn('Camera error', e);
+    }
+  };
+
+  const getLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location permission is required to get current location.');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+      setLocation(loc.coords);
+
+      // Reverse geocode for a readable address (best-effort)
+      const geocode = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+      if (geocode && geocode.length > 0) {
+        const place = geocode[0];
+        const parts = [
+          place.name,
+          place.street,
+          place.city,
+          place.region,
+          place.postalCode,
+          place.country,
+        ].filter(Boolean);
+        setAddress(parts.join(', '));
+      } else {
+        setAddress(null);
+      }
+    } catch (e) {
+      console.warn('Location error', e);
+    }
   };
 
   const onSliderGestureEvent = Animated.event(
@@ -93,6 +200,34 @@ export default function CommunitySafetyAlerts({ navigation }) {
           onFocus={() => setDescriptionFocused(true)}
           onBlur={() => setDescriptionFocused(false)}
         />
+
+        {/* Image upload UI */}
+        <View style={styles.row}>
+          <TouchableOpacity style={styles.smallButton} onPress={pickImage}>
+            <Text style={styles.smallButtonText}>Choose Image</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.smallButton} onPress={takePhoto}>
+            <Text style={styles.smallButtonText}>Take Photo</Text>
+          </TouchableOpacity>
+        </View>
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+        ) : null}
+
+        {/* Location UI */}
+        <View style={styles.row}>
+          <TouchableOpacity style={styles.smallButton} onPress={getLocation}>
+            <Text style={styles.smallButtonText}>Get Current Location</Text>
+          </TouchableOpacity>
+        </View>
+        {location ? (
+          <View style={styles.locationBox}>
+            <Text style={styles.locationText}>
+              Lat: {location.latitude.toFixed(6)}  Lon: {location.longitude.toFixed(6)}
+            </Text>
+            {address ? <Text style={styles.locationText}>{address}</Text> : null}
+          </View>
+        ) : null}
 
         <TouchableOpacity style={styles.button} onPress={handleSubmitAlert}>
           <Text style={styles.buttonText}>Submit Alert</Text>
@@ -170,5 +305,45 @@ const styles = StyleSheet.create({
   sliderText: {
     color: '#333',
     fontWeight: '600',
+  },
+
+  // New styles
+  row: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  smallButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderColor: '#007AFF',
+    borderWidth: 1,
+    paddingVertical: 10,
+    marginHorizontal: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  smallButtonText: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  imagePreview: {
+    width: 200,
+    height: 140,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  locationBox: {
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 8,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    width: '100%',
+    marginBottom: 12,
+  },
+  locationText: {
+    color: '#333',
   },
 });
