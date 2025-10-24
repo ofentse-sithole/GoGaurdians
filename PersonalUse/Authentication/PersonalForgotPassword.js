@@ -8,18 +8,20 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
-  Alert 
+  Alert,
+  ActivityIndicator
 } from 'react-native';
-// Import your icon library here, for example:
-// import Icon from 'react-native-vector-icons/Feather';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../../firebaseConfig'; 
 
-export default function ForgotPassword({ navigation }) {
+export default function PersonalForgotPassword({ navigation }) {
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleResetPassword = () => {
-    if (!email) {
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
@@ -31,20 +33,57 @@ export default function ForgotPassword({ navigation }) {
       return;
     }
 
-    console.log('Reset password for:', email);
-    // Add your password reset logic here (e.g., API call)
-    
-    setIsSubmitted(true);
+    setLoading(true);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      console.log('Password reset email sent to:', email);
+      setIsSubmitted(true);
+    } catch (error) {
+      console.error('Password reset error:', error);
+      
+      let errorMessage = 'An error occurred while sending reset email';
+      
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many requests. Please try again later';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Failed to send reset email';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
     navigation?.navigate('PersonalLogin');
   };
 
-  const handleResendEmail = () => {
-    console.log('Resend email to:', email);
-    Alert.alert('Success', 'Reset link has been resent to your email');
-    // Add your resend logic here
+  const handleResendEmail = async () => {
+    setLoading(true);
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+      Alert.alert('Success', 'Reset link has been resent to your email');
+      console.log('Reset email resent to:', email);
+    } catch (error) {
+      console.error('Resend error:', error);
+      Alert.alert('Error', 'Failed to resend email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (isSubmitted) {
@@ -62,13 +101,10 @@ export default function ForgotPassword({ navigation }) {
           <View style={styles.gradientCircle1} />
           <View style={styles.gradientCircle2} />
 
-          
-
           {/* Success Icon */}
           <View style={styles.successIconContainer}>
             <View style={styles.successIconOuter}>
               <View style={styles.successIcon}>
-                {/* Replace with: <Icon name="check" size={48} color="#fff" /> */}
                 <Text style={styles.checkmark}>✓</Text>
               </View>
             </View>
@@ -90,18 +126,24 @@ export default function ForgotPassword({ navigation }) {
           <View style={styles.buttonsContainer}>
             {/* Resend Button */}
             <TouchableOpacity 
-              style={styles.resendButton}
+              style={[styles.resendButton, loading && styles.buttonDisabled]}
               onPress={handleResendEmail}
               activeOpacity={0.7}
+              disabled={loading}
             >
-              <Text style={styles.resendButtonText}>Resend Email</Text>
+              {loading ? (
+                <ActivityIndicator color="#6366F1" size="small" />
+              ) : (
+                <Text style={styles.resendButtonText}>Resend Email</Text>
+              )}
             </TouchableOpacity>
 
             {/* Back to Login */}
             <TouchableOpacity 
-              style={styles.backButton}
+              style={[styles.backButton, loading && styles.backButtonDisabled]}
               onPress={handleBackToLogin}
               activeOpacity={0.7}
+              disabled={loading}
             >
               <Text style={styles.backButtonText}>Back to Login</Text>
               <View style={styles.buttonShine} />
@@ -131,8 +173,8 @@ export default function ForgotPassword({ navigation }) {
           style={styles.backArrowButton}
           onPress={handleBackToLogin}
           activeOpacity={0.7}
+          disabled={loading}
         >
-          {/* Replace with: <Icon name="arrow-left" size={20} color="#1F2937" /> */}
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
 
@@ -140,7 +182,6 @@ export default function ForgotPassword({ navigation }) {
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
             <View style={styles.logoInner}>
-              {/* Replace with your logo or icon */}
               <Text style={styles.logoText}>◆</Text>
             </View>
           </View>
@@ -164,7 +205,6 @@ export default function ForgotPassword({ navigation }) {
               emailFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="mail" size={20} color={emailFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, emailFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>@</Text>
                 </View>
@@ -180,18 +220,26 @@ export default function ForgotPassword({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
 
           {/* Reset Password Button */}
           <TouchableOpacity 
-            style={styles.resetButton}
+            style={[styles.resetButton, loading && styles.resetButtonDisabled]}
             onPress={handleResetPassword}
             activeOpacity={0.9}
+            disabled={loading}
           >
-            <Text style={styles.resetButtonText}>Send Reset Link</Text>
-            <View style={styles.buttonShine} />
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.resetButtonText}>Send Reset Link</Text>
+                <View style={styles.buttonShine} />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -204,7 +252,11 @@ export default function ForgotPassword({ navigation }) {
           {/* Back to Login Link */}
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Remember your password? </Text>
-            <TouchableOpacity onPress={handleBackToLogin} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity 
+              onPress={handleBackToLogin} 
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              disabled={loading}
+            >
               <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
@@ -261,7 +313,7 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     fontWeight: '600',
   },
-   logoContainer: {
+  logoContainer: {
     alignItems: 'center',
     marginTop: 0,
     marginBottom: 24,
@@ -400,6 +452,10 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
     overflow: 'hidden',
+  },
+  resetButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0.1,
   },
   buttonShine: {
     position: 'absolute',
@@ -554,5 +610,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     letterSpacing: 0.5,
+  },
+  backButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0.1,
+  },
+  buttonDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
   },
 });

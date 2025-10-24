@@ -8,9 +8,14 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
-  Animated
+  Animated,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, firestore } from '../../firebaseConfig'; 
 
 export default function PersonalLogin({ navigation }) {
   const [email, setEmail] = useState('');
@@ -18,10 +23,84 @@ export default function PersonalLogin({ navigation }) {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [sliderPosition] = useState(new Animated.Value(0));
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log('Login pressed', { email, password });
-    // Add your login logic here
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      // Sign in with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Check if user document exists in Firestore
+      const userDocRef = doc(firestore, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        // Create user document if it doesn't exist
+        await setDoc(userDocRef, {
+          email: user.email,
+          uid: user.uid,
+          accountType: 'personal',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+          // Add any other default fields you need
+        });
+      } else {
+        // Update last login time
+        await setDoc(userDocRef, {
+          ...userDoc.data(),
+          lastLogin: new Date().toISOString(),
+        }, { merge: true });
+      }
+
+      console.log('Login successful:', user.email);
+      
+      // Navigate to your main app screen
+      // Replace 'MainApp' with your actual screen name
+      navigation?.reset({
+        index: 0,
+        routes: [{ name: 'MainApp' }], // or whatever your main screen is called
+      });
+      
+    } catch (error) {
+      console.error('Login error:', error);
+      
+      let errorMessage = 'An error occurred during login';
+      
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'This account has been disabled';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed login attempts. Please try again later';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Login failed. Please try again';
+      }
+      
+      Alert.alert('Login Failed', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForgotPassword = () => {
@@ -89,7 +168,6 @@ export default function PersonalLogin({ navigation }) {
         <View style={styles.gradientCircle1} />
         <View style={styles.gradientCircle2} />
 
-
         {/* Logo */}
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
@@ -126,6 +204,7 @@ export default function PersonalLogin({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
@@ -137,6 +216,7 @@ export default function PersonalLogin({ navigation }) {
               <TouchableOpacity 
                 onPress={handleForgotPassword}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                disabled={loading}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
@@ -156,18 +236,26 @@ export default function PersonalLogin({ navigation }) {
                 onBlur={() => setPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
 
           {/* Login Button */}
           <TouchableOpacity 
-            style={styles.loginButton}
+            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
             onPress={handleLogin}
             activeOpacity={0.9}
+            disabled={loading}
           >
-            <Text style={styles.loginButtonText}>Sign In</Text>
-            <View style={styles.buttonShine} />
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.loginButtonText}>Sign In</Text>
+                <View style={styles.buttonShine} />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -180,7 +268,11 @@ export default function PersonalLogin({ navigation }) {
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
             <Text style={styles.signUpText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={handleSignUp} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity 
+              onPress={handleSignUp} 
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              disabled={loading}
+            >
               <Text style={styles.signUpLink}>Create Account</Text>
             </TouchableOpacity>
           </View>
@@ -196,6 +288,7 @@ export default function PersonalLogin({ navigation }) {
           <PanGestureHandler
             onGestureEvent={onSliderGestureEvent}
             onHandlerStateChange={onSliderHandlerStateChange}
+            enabled={!loading}
           >
             <Animated.View
               style={[
@@ -217,6 +310,7 @@ export default function PersonalLogin({ navigation }) {
                 style={styles.sliderButtonInner}
                 onPress={handleSliderPress}
                 activeOpacity={0.8}
+                disabled={loading}
               >
                 <Text style={styles.sliderButtonText}>🏢</Text>
               </TouchableOpacity>
@@ -423,6 +517,10 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
     overflow: 'hidden',
+  },
+  loginButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0.1,
   },
   buttonShine: {
     position: 'absolute',

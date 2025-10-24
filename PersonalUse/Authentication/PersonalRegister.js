@@ -7,10 +7,13 @@ import {
   StyleSheet, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
-// Import your icon library here, for example:
-// import Icon from 'react-native-vector-icons/Feather';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, firestore } from '../../firebaseConfig'; 
 
 export default function PersonalRegister({ navigation }) {
   const [firstName, setFirstName] = useState('');
@@ -19,6 +22,7 @@ export default function PersonalRegister({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   
   const [firstNameFocused, setFirstNameFocused] = useState(false);
   const [lastNameFocused, setLastNameFocused] = useState(false);
@@ -27,19 +31,136 @@ export default function PersonalRegister({ navigation }) {
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
-  const handleRegister = () => {
-    // Validate passwords match
+  const validateForm = () => {
+    // Check if all fields are filled
+    if (!firstName.trim() || !lastName.trim() || !idNumber.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return false;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return false;
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return false;
+    }
+
+    // Check if passwords match
     if (password !== confirmPassword) {
-      alert('Passwords do not match');
+      Alert.alert('Error', 'Passwords do not match');
+      return false;
+    }
+
+    // Validate ID number (South African ID number is 13 digits)
+    if (idNumber.length !== 13 || !/^\d+$/.test(idNumber)) {
+      Alert.alert('Error', 'Please enter a valid 13-digit ID number');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleRegister = async () => {
+    if (!validateForm()) {
       return;
     }
+
+    setLoading(true);
     
-    console.log('Register pressed', { firstName, lastName, idNumber, email, password });
-    // Add your registration logic here
+    try {
+      // Create user with Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update user profile with display name
+      await updateProfile(user, {
+        displayName: `${firstName} ${lastName}`,
+      });
+
+      // Create user document in Firestore
+      const userDocRef = doc(firestore, 'users', user.uid);
+      await setDoc(userDocRef, {
+        uid: user.uid,
+        email: email.toLowerCase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        idNumber: idNumber.trim(),
+        displayName: `${firstName.trim()} ${lastName.trim()}`,
+        accountType: 'personal',
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        isEmailVerified: user.emailVerified,
+        profileCompleted: true,
+        // Add any additional fields you need
+        profileData: {
+          avatar: null,
+          dateOfBirth: null,
+          phoneNumber: null,
+          address: null,
+          emergencyContact: null,
+        },
+        preferences: {
+          notifications: true,
+          emailUpdates: true,
+          theme: 'light',
+        },
+      });
+
+      console.log('Registration successful:', user.email);
+      
+      Alert.alert(
+        'Registration Successful!', 
+        'Your account has been created successfully. You can now log in.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate back to login screen
+              navigation?.navigate('PersonalLogin');
+            },
+          },
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      let errorMessage = 'An error occurred during registration';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'An account with this email already exists';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'Email/password accounts are not enabled';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password is too weak. Please choose a stronger password';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Registration failed. Please try again';
+      }
+      
+      Alert.alert('Registration Failed', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
-    navigation.navigate('PersonalLogin');
+    navigation?.navigate('PersonalLogin');
   };
 
   const handleLogin = () => {
@@ -65,19 +186,19 @@ export default function PersonalRegister({ navigation }) {
         <View style={styles.gradientCircle2} />
 
         {/* Back Button */}
-                <TouchableOpacity 
-                  style={styles.backArrowButton}
-                  onPress={handleBackToLogin}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.backArrow}>←</Text>
-                </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.backArrowButton}
+          onPress={handleBackToLogin}
+          activeOpacity={0.7}
+          disabled={loading}
+        >
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
             <View style={styles.logoInner}>
-              {/* Replace with your logo or icon */}
               <Text style={styles.logoText}>◆</Text>
             </View>
           </View>
@@ -99,7 +220,6 @@ export default function PersonalRegister({ navigation }) {
               firstNameFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="user" size={20} color={firstNameFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, firstNameFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>F</Text>
                 </View>
@@ -113,6 +233,7 @@ export default function PersonalRegister({ navigation }) {
                 onFocus={() => setFirstNameFocused(true)}
                 onBlur={() => setFirstNameFocused(false)}
                 autoCapitalize="words"
+                editable={!loading}
               />
             </View>
           </View>
@@ -125,7 +246,6 @@ export default function PersonalRegister({ navigation }) {
               lastNameFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="user" size={20} color={lastNameFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, lastNameFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>L</Text>
                 </View>
@@ -139,6 +259,7 @@ export default function PersonalRegister({ navigation }) {
                 onFocus={() => setLastNameFocused(true)}
                 onBlur={() => setLastNameFocused(false)}
                 autoCapitalize="words"
+                editable={!loading}
               />
             </View>
           </View>
@@ -151,20 +272,21 @@ export default function PersonalRegister({ navigation }) {
               idNumberFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="credit-card" size={20} color={idNumberFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, idNumberFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>ID</Text>
                 </View>
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="Enter your ID number"
+                placeholder="Enter your 13-digit ID number"
                 placeholderTextColor="#999"
                 value={idNumber}
                 onChangeText={setIdNumber}
                 onFocus={() => setIdNumberFocused(true)}
                 onBlur={() => setIdNumberFocused(false)}
                 keyboardType="numeric"
+                maxLength={13}
+                editable={!loading}
               />
             </View>
           </View>
@@ -177,7 +299,6 @@ export default function PersonalRegister({ navigation }) {
               emailFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="mail" size={20} color={emailFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, emailFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>@</Text>
                 </View>
@@ -193,6 +314,7 @@ export default function PersonalRegister({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
@@ -205,14 +327,13 @@ export default function PersonalRegister({ navigation }) {
               passwordFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="lock" size={20} color={passwordFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, passwordFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>P</Text>
                 </View>
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="Create a strong password"
+                placeholder="Create a strong password (min 6 chars)"
                 placeholderTextColor="#999"
                 value={password}
                 onChangeText={setPassword}
@@ -220,6 +341,7 @@ export default function PersonalRegister({ navigation }) {
                 onBlur={() => setPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
@@ -232,7 +354,6 @@ export default function PersonalRegister({ navigation }) {
               confirmPasswordFocused && styles.inputWrapperFocused
             ]}>
               <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="shield" size={20} color={confirmPasswordFocused ? "#6366F1" : "#9CA3AF"} /> */}
                 <View style={[styles.iconPlaceholder, confirmPasswordFocused && styles.iconPlaceholderFocused]}>
                   <Text style={styles.iconText}>C</Text>
                 </View>
@@ -247,6 +368,7 @@ export default function PersonalRegister({ navigation }) {
                 onBlur={() => setConfirmPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
@@ -261,12 +383,19 @@ export default function PersonalRegister({ navigation }) {
 
           {/* Register Button */}
           <TouchableOpacity 
-            style={styles.registerButton}
+            style={[styles.registerButton, loading && styles.registerButtonDisabled]}
             onPress={handleRegister}
             activeOpacity={0.9}
+            disabled={loading}
           >
-            <Text style={styles.registerButtonText}>Create Account</Text>
-            <View style={styles.buttonShine} />
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.registerButtonText}>Create Account</Text>
+                <View style={styles.buttonShine} />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -279,7 +408,11 @@ export default function PersonalRegister({ navigation }) {
           {/* Login Link */}
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={handleLogin} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity 
+              onPress={handleLogin} 
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              disabled={loading}
+            >
               <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
@@ -499,6 +632,10 @@ const styles = StyleSheet.create({
     elevation: 8,
     overflow: 'hidden',
   },
+  registerButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0.1,
+  },
   buttonShine: {
     position: 'absolute',
     top: 0,
@@ -556,5 +693,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
     borderWidth: 1,
     borderColor: 'rgba(13, 13, 77, 0.3)',
+  },
+  backArrow: {
+    fontSize: 24,
+    color: '#1F2937',
+    fontWeight: 'bold',
   },
 });
