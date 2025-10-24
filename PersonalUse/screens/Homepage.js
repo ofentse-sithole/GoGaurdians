@@ -14,10 +14,12 @@ import * as Location from 'expo-location';
 import PanicButton from '../Components/PanicButton';
 import AIAssistant from '../Components/AIAssistant';
 import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
-import MapView from 'react-native-maps';
+import MockMapView, { Marker } from '../Components/MockMapView';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
-const Homepage = ({ navigation }) => {
+const Homepage = () => {
+  const navigation = useNavigation();
   const [location, setLocation] = useState(null);
   const [mapRegion, setMapRegion] = useState({
     latitude: 37.78825,
@@ -111,7 +113,7 @@ const Homepage = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Full-Screen Map */}
-      <MapView
+      <MockMapView
         style={styles.map}
         region={mapRegion}
         onRegionChange={setMapRegion}
@@ -122,7 +124,7 @@ const Homepage = ({ navigation }) => {
         pitchEnabled
       >
         {location && (
-          <MapView.Marker
+          <Marker
             coordinate={{
               latitude: location.latitude,
               longitude: location.longitude,
@@ -131,7 +133,7 @@ const Homepage = ({ navigation }) => {
             pinColor="teal"
           />
         )}
-      </MapView>
+      </MockMapView>
 
       {/* Top Right Settings Icon */}
       <TouchableOpacity

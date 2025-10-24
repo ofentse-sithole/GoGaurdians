@@ -36,6 +36,8 @@ export default function PersonalRegister({ navigation }) {
     
     console.log('Register pressed', { firstName, lastName, idNumber, email, password });
     // Add your registration logic here
+    // After successful registration, navigate to PersonalApp
+    navigation?.navigate('PersonalApp');
   };
 
   const handleBackToLogin = () => {

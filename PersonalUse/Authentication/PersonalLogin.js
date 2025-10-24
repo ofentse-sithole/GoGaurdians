@@ -22,6 +22,8 @@ export default function PersonalLogin({ navigation }) {
   const handleLogin = () => {
     console.log('Login pressed', { email, password });
     // Add your login logic here
+    // After successful authentication, navigate to PersonalApp
+    navigation?.navigate('PersonalApp');
   };
 
   const handleForgotPassword = () => {

@@ -6,7 +6,7 @@ import PersonalForgotPassword from "./PersonalUse/Authentication/PersonalForgotP
 import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
 import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
 import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
-import Homepage from "./PersonalUse/screens/Homepage";
+import PersonalNavbar from "./PersonalUse/Components/PersonalNavbar";
 
 const Stack = createStackNavigator();
 
@@ -20,7 +20,7 @@ const App = () => {
         <Stack.Screen name="BusinessLogin" component={BusinessLogin} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
-        <Stack.Screen name="Homepage" component={Homepage} options={{ headerShown: false }} />
+        <Stack.Screen name="PersonalApp" component={PersonalNavbar} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
