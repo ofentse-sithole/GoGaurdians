@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform, SafeAreaView } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import Homepage from '../screens/Homepage';
 
 const Tab = createBottomTabNavigator();
@@ -9,47 +9,56 @@ const Tab = createBottomTabNavigator();
 // Placeholder Screen Components for other tabs
 const SmartRouteScreen = () => (
   <View style={styles.screen}>
-    <Text style={styles.screenText}>Smart Route Screen</Text>
+    <MaterialIcons name="route" size={64} color="#00D9FF" />
+    <Text style={styles.screenText}>Smart Route</Text>
+    <Text style={styles.screenSubtext}>Coming soon</Text>
   </View>
 );
 
 const FamilyScreen = () => (
   <View style={styles.screen}>
-    <Text style={styles.screenText}>Family Screen</Text>
+    <MaterialIcons name="family-restroom" size={64} color="#00D9FF" />
+    <Text style={styles.screenText}>Family & Contacts</Text>
+    <Text style={styles.screenSubtext}>Coming soon</Text>
   </View>
 );
 
 const ReportsScreen = () => (
   <View style={styles.screen}>
-    <Text style={styles.screenText}>Reports Screen</Text>
+    <MaterialIcons name="assessment" size={64} color="#00D9FF" />
+    <Text style={styles.screenText}>Incident Reports</Text>
+    <Text style={styles.screenSubtext}>Coming soon</Text>
   </View>
 );
 
 const ProfileScreen = () => (
   <View style={styles.screen}>
-    <Text style={styles.screenText}>Profile Screen</Text>
+    <MaterialIcons name="person" size={64} color="#00D9FF" />
+    <Text style={styles.screenText}>My Profile</Text>
+    <Text style={styles.screenSubtext}>Coming soon</Text>
   </View>
 );
 
-const PersonalBottomNavigation = ({ navigation }) => {
+const PersonalBottomNavigation = () => {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           let iconName;
+          let IconComponent = MaterialIcons;
 
           switch (route.name) {
             case 'Home':
-              iconName = focused ? 'home' : 'home-outline';
+              iconName = focused ? 'home' : 'home-outlined';
               break;
             case 'SmartRoute':
-              iconName = focused ? 'navigate' : 'navigate-outline';
+              iconName = focused ? 'route' : 'route';
               break;
             case 'Family':
-              iconName = focused ? 'people' : 'people-outline';
+              iconName = focused ? 'family-restroom' : 'family-restroom';
               break;
             case 'Reports':
-              iconName = focused ? 'document-text' : 'document-text-outline';
+              iconName = focused ? 'assessment' : 'assessment';
               break;
             case 'Profile':
               iconName = focused ? 'person' : 'person-outline';
@@ -58,23 +67,51 @@ const PersonalBottomNavigation = ({ navigation }) => {
               iconName = 'circle';
           }
 
-          return <Icon name={iconName} size={size} color={color} />;
+          return <IconComponent name={iconName} size={26} color={color} />;
+        },
+        tabBarLabel: ({ focused, color }) => {
+          const labels = {
+            'Home': 'Home',
+            'SmartRoute': 'Route',
+            'Family': 'Family',
+            'Reports': 'Reports',
+            'Profile': 'Profile',
+          };
+          return (
+            <Text style={[
+              styles.tabLabel,
+              { color, fontWeight: focused ? '700' : '500' }
+            ]}>
+              {labels[route.name]}
+            </Text>
+          );
         },
         tabBarActiveTintColor: '#00D9FF',
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarInactiveTintColor: '#9CA3AF',
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: '#0F1419',
           borderTopWidth: 1,
-          borderTopColor: '#E5E5EA',
-          height: 60,
-          paddingBottom: 5,
-          paddingTop: 5,
+          borderTopColor: 'rgba(0, 217, 255, 0.1)',
+          height: Platform.OS === 'ios' ? 85 : 70,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 12,
+          paddingTop: 8,
+          paddingHorizontal: 0,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '500',
+          marginTop: 4,
         },
         headerShown: false,
+        tabBarItemStyle: {
+          paddingVertical: 8,
+          paddingHorizontal: 4,
+        },
       })}
     >
       <Tab.Screen 
@@ -88,7 +125,7 @@ const PersonalBottomNavigation = ({ navigation }) => {
         name="SmartRoute" 
         component={SmartRouteScreen}
         options={{
-          tabBarLabel: 'Smart Route',
+          tabBarLabel: 'Route',
         }}
       />
       <Tab.Screen 
@@ -121,12 +158,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#0F1419',
+    paddingHorizontal: 20,
   },
   screenText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginTop: 20,
+    letterSpacing: 0.3,
+  },
+  screenSubtext: {
+    fontSize: 14,
+    color: '#A0AFBB',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });
 
