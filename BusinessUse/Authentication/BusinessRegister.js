@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { ref, set, serverTimestamp } from 'firebase/database';
-import { auth, realtimeDB } from './firebaseConfig'; // Adjust path as needed
+import { auth, realtimeDB } from '../../firebaseConfig';
 
 export default function BusinessRegister({ navigation }) {
   const [businessName, setBusinessName] = useState('');
