@@ -83,7 +83,7 @@ GoGuardian is the **first coordinated safety response network** designed to conn
 
 ## 🆚 Competitor Comparison
 
-| Feature                 | **Namola**       | **GoGuardian**                    |
+| Feature                 | **Competitor**       | **GoGuardian**                    |
 | ----------------------- | ---------------- | --------------------------------- |
 | Responder Type          | Single responder | Multi-agency coordinated response |
 | CPF Integration         | ❌                | ✅                                 |

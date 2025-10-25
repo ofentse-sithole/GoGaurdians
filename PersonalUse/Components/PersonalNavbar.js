@@ -3,41 +3,12 @@ import { View, Text, StyleSheet, Platform, SafeAreaView } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import Homepage from '../screens/Homepage';
+import FamilyScreen from '../screens/FamilyScreen';
+import SmartRouteScreen from '../screens/SmartRouteScreen';
+import ReportsScreen from '../screens/ReportsScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
-
-// Placeholder Screen Components for other tabs
-const SmartRouteScreen = () => (
-  <View style={styles.screen}>
-    <MaterialIcons name="route" size={64} color="#00D9FF" />
-    <Text style={styles.screenText}>Smart Route</Text>
-    <Text style={styles.screenSubtext}>Coming soon</Text>
-  </View>
-);
-
-const FamilyScreen = () => (
-  <View style={styles.screen}>
-    <MaterialIcons name="family-restroom" size={64} color="#00D9FF" />
-    <Text style={styles.screenText}>Family & Contacts</Text>
-    <Text style={styles.screenSubtext}>Coming soon</Text>
-  </View>
-);
-
-const ReportsScreen = () => (
-  <View style={styles.screen}>
-    <MaterialIcons name="assessment" size={64} color="#00D9FF" />
-    <Text style={styles.screenText}>Incident Reports</Text>
-    <Text style={styles.screenSubtext}>Coming soon</Text>
-  </View>
-);
-
-const ProfileScreen = () => (
-  <View style={styles.screen}>
-    <MaterialIcons name="person" size={64} color="#00D9FF" />
-    <Text style={styles.screenText}>My Profile</Text>
-    <Text style={styles.screenSubtext}>Coming soon</Text>
-  </View>
-);
 
 const PersonalBottomNavigation = () => {
   return (
@@ -67,7 +38,7 @@ const PersonalBottomNavigation = () => {
               iconName = 'circle';
           }
 
-          return <IconComponent name={iconName} size={26} color={color} />;
+          return <IconComponent name={iconName} size={focused ? 28 : 24} color={color} />;
         },
         tabBarLabel: ({ focused, color }) => {
           const labels = {
@@ -80,27 +51,31 @@ const PersonalBottomNavigation = () => {
           return (
             <Text style={[
               styles.tabLabel,
-              { color, fontWeight: focused ? '700' : '500' }
+              { 
+                color, 
+                fontWeight: focused ? '600' : '400',
+                fontSize: focused ? 12 : 11,
+              }
             ]}>
               {labels[route.name]}
             </Text>
           );
         },
-        tabBarActiveTintColor: '#00D9FF',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#999999',
         tabBarStyle: {
-          backgroundColor: '#0F1419',
-          borderTopWidth: 1,
-          borderTopColor: 'rgba(0, 217, 255, 0.1)',
-          height: Platform.OS === 'ios' ? 85 : 70,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 12,
-          paddingTop: 8,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 0,
+          borderTopColor: 'transparent',
+          height: Platform.OS === 'ios' ? 84 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+          paddingTop: 12,
           paddingHorizontal: 0,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 10,
+          shadowOffset: { width: 0, height: -1 },
+          shadowOpacity: 0.08,
+          shadowRadius: 3,
+          elevation: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -109,8 +84,10 @@ const PersonalBottomNavigation = () => {
         },
         headerShown: false,
         tabBarItemStyle: {
-          paddingVertical: 8,
+          paddingVertical: 6,
           paddingHorizontal: 4,
+          justifyContent: 'center',
+          alignItems: 'center',
         },
       })}
     >
@@ -154,26 +131,6 @@ const PersonalBottomNavigation = () => {
 };
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0F1419',
-    paddingHorizontal: 20,
-  },
-  screenText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginTop: 20,
-    letterSpacing: 0.3,
-  },
-  screenSubtext: {
-    fontSize: 14,
-    color: '#A0AFBB',
-    marginTop: 8,
-    fontWeight: '500',
-  },
   tabLabel: {
     fontSize: 11,
     fontWeight: '500',
