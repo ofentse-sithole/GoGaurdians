@@ -14,10 +14,10 @@ import {
   ImageBackground,
 } from 'react-native';
 import * as Location from 'expo-location';
+import Maps from 'expo-maps';
 import PanicButton from '../Components/PanicButton';
 import AIAssistant from '../Components/AIAssistant';
 import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
-import MockMapView, { Marker } from '../Components/MockMapView';
 import { MaterialIcons, Feather, AntDesign } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
@@ -118,27 +118,15 @@ const Homepage = () => {
       <StatusBar barStyle="light-content" backgroundColor="#0F1419" />
       
       {/* Full-Screen Map Background */}
-      <MockMapView
+      <Maps
         style={styles.map}
-        region={mapRegion}
-        onRegionChange={setMapRegion}
-        showsUserLocation
-        followsUserLocation
-        zoomEnabled
-        scrollEnabled
-        pitchEnabled
-      >
-        {location && (
-          <Marker
-            coordinate={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-            }}
-            title="Your Location"
-            pinColor="teal"
-          />
-        )}
-      </MockMapView>
+        initialRegion={mapRegion}
+        showsUserLocation={true}
+        followsUserLocation={true}
+        zoomEnabled={true}
+        scrollEnabled={true}
+        pitchEnabled={true}
+      />
 
       {/* Dark Overlay for Better UI Contrast */}
       <View style={styles.overlay} />
