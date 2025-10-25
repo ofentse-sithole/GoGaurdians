@@ -7,10 +7,14 @@ import {
   StyleSheet, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
-// Import your icon library here, for example:
-// import Icon from 'react-native-vector-icons/Feather';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, firestore } from '../../firebaseConfig';
+import Icon from 'react-native-vector-icons/Ionicons'; // Using Ionicons for professional icons
 
 export default function PersonalRegister({ navigation }) {
   const [firstName, setFirstName] = useState('');
@@ -19,6 +23,9 @@ export default function PersonalRegister({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   const [firstNameFocused, setFirstNameFocused] = useState(false);
   const [lastNameFocused, setLastNameFocused] = useState(false);
@@ -27,21 +34,134 @@ export default function PersonalRegister({ navigation }) {
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
-  const handleRegister = () => {
-    // Validate passwords match
+  const validateForm = () => {
+    // Check if all fields are filled
+    if (!firstName.trim() || !lastName.trim() || !idNumber.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return false;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return false;
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return false;
+    }
+
+    // Check if passwords match
     if (password !== confirmPassword) {
-      alert('Passwords do not match');
+      Alert.alert('Error', 'Passwords do not match');
+      return false;
+    }
+
+    // Validate ID number (South African ID number is 13 digits)
+    if (idNumber.length !== 13 || !/^\d+$/.test(idNumber)) {
+      Alert.alert('Error', 'Please enter a valid 13-digit ID number');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleRegister = async () => {
+    if (!validateForm()) {
       return;
     }
+
+    setLoading(true);
     
-    console.log('Register pressed', { firstName, lastName, idNumber, email, password });
-    // Add your registration logic here
-    // After successful registration, navigate to PersonalApp
-    navigation?.navigate('PersonalApp');
+    try {
+      // Create user with Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update user profile with display name
+      await updateProfile(user, {
+        displayName: `${firstName} ${lastName}`,
+      });
+
+      // Create user document in Firestore
+      const userDocRef = doc(firestore, 'users', user.uid);
+      await setDoc(userDocRef, {
+        uid: user.uid,
+        email: email.toLowerCase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        idNumber: idNumber.trim(),
+        displayName: `${firstName.trim()} ${lastName.trim()}`,
+        accountType: 'personal',
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        isEmailVerified: user.emailVerified,
+        profileCompleted: true,
+        profileData: {
+          avatar: null,
+          dateOfBirth: null,
+          phoneNumber: null,
+          address: null,
+          emergencyContact: null,
+        },
+        preferences: {
+          notifications: true,
+          emailUpdates: true,
+          theme: 'light',
+        },
+      });
+
+      console.log('Registration successful:', user.email);
+      
+      Alert.alert(
+        'Registration Successful!', 
+        'Your account has been created successfully. You can now log in.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation?.navigate('PersonalLogin');
+            },
+          },
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      let errorMessage = 'An error occurred during registration';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'An account with this email already exists';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'Email/password accounts are not enabled';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password is too weak. Please choose a stronger password';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Registration failed. Please try again';
+      }
+      
+      Alert.alert('Registration Failed', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
-    navigation.navigate('PersonalLogin');
+    navigation?.navigate('PersonalLogin');
   };
 
   const handleLogin = () => {
@@ -62,132 +182,166 @@ export default function PersonalRegister({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Background Gradient Elements */}
-        <View style={styles.gradientCircle1} />
-        <View style={styles.gradientCircle2} />
-
-        {/* Back Button */}
-                <TouchableOpacity 
-                  style={styles.backArrowButton}
-                  onPress={handleBackToLogin}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.backArrow}>←</Text>
-                </TouchableOpacity>
-
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoPlaceholder}>
-            <View style={styles.logoInner}>
-              {/* Replace with your logo or icon */}
-              <Text style={styles.logoText}>◆</Text>
-            </View>
-          </View>
+        {/* Background Elements */}
+        <View style={styles.backgroundPattern}>
+          <View style={styles.gradientOrb1} />
+          <View style={styles.gradientOrb2} />
+          <View style={styles.gradientOrb3} />
         </View>
 
-        {/* Title */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to get started with us</Text>
-        </View>
+        {/* Header Section */}
+        <View style={styles.headerSection}>
+          {/* Back Button */}
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleBackToLogin}
+            activeOpacity={0.8}
+            disabled={loading}
+          >
+            <Icon name="arrow-back-outline" size={24} color="#64748B" />
+          </TouchableOpacity>
 
-        {/* Form Container */}
-        <View style={styles.formContainer}>
-          {/* First Name Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>First Name</Text>
-            <View style={[
-              styles.inputWrapper,
-              firstNameFocused && styles.inputWrapperFocused
-            ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="user" size={20} color={firstNameFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, firstNameFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>F</Text>
-                </View>
+          {/* Professional Logo */}
+          <View style={styles.logoContainer}>
+            <View style={styles.logoWrapper}>
+              <View style={styles.logoCore}>
+                <Icon name="person-add-outline" size={28} color="#ffffff" />
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your first name"
-                placeholderTextColor="#999"
-                value={firstName}
-                onChangeText={setFirstName}
-                onFocus={() => setFirstNameFocused(true)}
-                onBlur={() => setFirstNameFocused(false)}
-                autoCapitalize="words"
-              />
+              <View style={styles.logoRing} />
             </View>
           </View>
 
-          {/* Last Name Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Last Name</Text>
-            <View style={[
-              styles.inputWrapper,
-              lastNameFocused && styles.inputWrapperFocused
-            ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="user" size={20} color={lastNameFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, lastNameFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>L</Text>
+          {/* Title Section */}
+          <View style={styles.titleContainer}>
+            <Text style={styles.mainTitle}>Create Account</Text>
+            <Text style={styles.mainSubtitle}>
+              Join us today and start your journey with a secure personal account
+            </Text>
+          </View>
+        </View>
+
+        {/* Form Card */}
+        <View style={styles.formCard}>
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>Personal Registration</Text>
+            <Text style={styles.formSubtitle}>Please fill in your details to create your account</Text>
+          </View>
+
+          {/* Name Fields Row */}
+          <View style={styles.nameRow}>
+            {/* First Name Input */}
+            <View style={[styles.inputGroup, styles.nameInput]}>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <View style={[
+                styles.inputContainer,
+                firstNameFocused && styles.inputContainerFocused
+              ]}>
+                <View style={styles.inputIconContainer}>
+                  <Icon 
+                    name="person-outline" 
+                    size={20} 
+                    color={firstNameFocused ? '#2563EB' : '#6B7280'} 
+                  />
                 </View>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="First name"
+                  placeholderTextColor="#9CA3AF"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  onFocus={() => setFirstNameFocused(true)}
+                  onBlur={() => setFirstNameFocused(false)}
+                  autoCapitalize="words"
+                  editable={!loading}
+                />
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your last name"
-                placeholderTextColor="#999"
-                value={lastName}
-                onChangeText={setLastName}
-                onFocus={() => setLastNameFocused(true)}
-                onBlur={() => setLastNameFocused(false)}
-                autoCapitalize="words"
-              />
+            </View>
+
+            {/* Last Name Input */}
+            <View style={[styles.inputGroup, styles.nameInput]}>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <View style={[
+                styles.inputContainer,
+                lastNameFocused && styles.inputContainerFocused
+              ]}>
+                <View style={styles.inputIconContainer}>
+                  <Icon 
+                    name="person-outline" 
+                    size={20} 
+                    color={lastNameFocused ? '#2563EB' : '#6B7280'} 
+                  />
+                </View>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Last name"
+                  placeholderTextColor="#9CA3AF"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  onFocus={() => setLastNameFocused(true)}
+                  onBlur={() => setLastNameFocused(false)}
+                  autoCapitalize="words"
+                  editable={!loading}
+                />
+              </View>
             </View>
           </View>
 
           {/* ID Number Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>ID Number</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>ID Number</Text>
             <View style={[
-              styles.inputWrapper,
-              idNumberFocused && styles.inputWrapperFocused
+              styles.inputContainer,
+              idNumberFocused && styles.inputContainerFocused
             ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="credit-card" size={20} color={idNumberFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, idNumberFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>ID</Text>
-                </View>
+              <View style={styles.inputIconContainer}>
+                <Icon 
+                  name="card-outline" 
+                  size={20} 
+                  color={idNumberFocused ? '#2563EB' : '#6B7280'} 
+                />
               </View>
               <TextInput
-                style={styles.input}
-                placeholder="Enter your ID number"
-                placeholderTextColor="#999"
+                style={styles.textInput}
+                placeholder="Enter your 13-digit ID number"
+                placeholderTextColor="#9CA3AF"
                 value={idNumber}
                 onChangeText={setIdNumber}
                 onFocus={() => setIdNumberFocused(true)}
                 onBlur={() => setIdNumberFocused(false)}
                 keyboardType="numeric"
+                maxLength={13}
+                editable={!loading}
               />
+              {idNumber.length === 13 && (
+                <View style={styles.inputIndicator}>
+                  <Icon 
+                    name="checkmark-circle-outline" 
+                    size={20} 
+                    color="#10B981" 
+                  />
+                </View>
+              )}
             </View>
           </View>
 
           {/* Email Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email Address</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email Address</Text>
             <View style={[
-              styles.inputWrapper,
-              emailFocused && styles.inputWrapperFocused
+              styles.inputContainer,
+              emailFocused && styles.inputContainerFocused
             ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="mail" size={20} color={emailFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, emailFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>@</Text>
-                </View>
+              <View style={styles.inputIconContainer}>
+                <Icon 
+                  name="mail-outline" 
+                  size={20} 
+                  color={emailFocused ? '#2563EB' : '#6B7280'} 
+                />
               </View>
               <TextInput
-                style={styles.input}
-                placeholder="you@example.com"
-                placeholderTextColor="#999"
+                style={styles.textInput}
+                placeholder="Enter your email address"
+                placeholderTextColor="#9CA3AF"
                 value={email}
                 onChangeText={setEmail}
                 onFocus={() => setEmailFocused(true)}
@@ -195,94 +349,143 @@ export default function PersonalRegister({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
 
           {/* Password Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Password</Text>
             <View style={[
-              styles.inputWrapper,
-              passwordFocused && styles.inputWrapperFocused
+              styles.inputContainer,
+              passwordFocused && styles.inputContainerFocused
             ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="lock" size={20} color={passwordFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, passwordFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>P</Text>
-                </View>
+              <View style={styles.inputIconContainer}>
+                <Icon 
+                  name="lock-closed-outline" 
+                  size={20} 
+                  color={passwordFocused ? '#2563EB' : '#6B7280'} 
+                />
               </View>
               <TextInput
-                style={styles.input}
-                placeholder="Create a strong password"
-                placeholderTextColor="#999"
+                style={styles.textInput}
+                placeholder="Create a secure password"
+                placeholderTextColor="#9CA3AF"
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setPasswordFocused(true)}
                 onBlur={() => setPasswordFocused(false)}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 autoCapitalize="none"
+                editable={!loading}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.passwordToggle}
+                disabled={loading}
+              >
+                <Icon 
+                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={20} 
+                  color="#6B7280" 
+                />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.passwordStrength}>
+              <Text style={styles.passwordHint}>
+                Minimum 6 characters required
+              </Text>
             </View>
           </View>
 
           {/* Confirm Password Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Confirm Password</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Confirm Password</Text>
             <View style={[
-              styles.inputWrapper,
-              confirmPasswordFocused && styles.inputWrapperFocused
+              styles.inputContainer,
+              confirmPasswordFocused && styles.inputContainerFocused
             ]}>
-              <View style={styles.iconContainer}>
-                {/* Replace with: <Icon name="shield" size={20} color={confirmPasswordFocused ? "#6366F1" : "#9CA3AF"} /> */}
-                <View style={[styles.iconPlaceholder, confirmPasswordFocused && styles.iconPlaceholderFocused]}>
-                  <Text style={styles.iconText}>C</Text>
-                </View>
+              <View style={styles.inputIconContainer}>
+                <Icon 
+                  name="lock-closed-outline" 
+                  size={20} 
+                  color={confirmPasswordFocused ? '#2563EB' : '#6B7280'} 
+                />
               </View>
               <TextInput
-                style={styles.input}
-                placeholder="Re-enter your password"
-                placeholderTextColor="#999"
+                style={styles.textInput}
+                placeholder="Confirm your password"
+                placeholderTextColor="#9CA3AF"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 onFocus={() => setConfirmPasswordFocused(true)}
                 onBlur={() => setConfirmPasswordFocused(false)}
-                secureTextEntry
+                secureTextEntry={!showConfirmPassword}
                 autoCapitalize="none"
+                editable={!loading}
               />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                style={styles.passwordToggle}
+                disabled={loading}
+              >
+                <Icon 
+                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={20} 
+                  color="#6B7280" 
+                />
+              </TouchableOpacity>
             </View>
           </View>
 
           {/* Terms and Conditions */}
-          <Text style={styles.termsText}>
-            By signing up, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text>
-            {' '}and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
-          </Text>
+          <View style={styles.termsSection}>
+            <Text style={styles.termsText}>
+              By creating an account, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms of Service</Text>
+              {' '}and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
+            </Text>
+          </View>
 
-          {/* Register Button */}
+          {/* Create Account Button */}
           <TouchableOpacity 
-            style={styles.registerButton}
+            style={[styles.registerButton, loading && styles.registerButtonDisabled]}
             onPress={handleRegister}
             activeOpacity={0.9}
+            disabled={loading}
           >
-            <Text style={styles.registerButtonText}>Create Account</Text>
-            <View style={styles.buttonShine} />
+            <View style={styles.buttonContent}>
+              {loading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.registerButtonText}>Create Account</Text>
+                  <Icon name="arrow-forward-outline" size={20} color="#ffffff" />
+                </>
+              )}
+            </View>
+            <View style={styles.buttonGradientOverlay} />
           </TouchableOpacity>
 
           {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
+          <View style={styles.dividerSection}>
+            <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>or</Text>
-            <View style={styles.divider} />
+            <View style={styles.dividerLine} />
           </View>
 
-          {/* Login Link */}
-          <View style={styles.loginContainer}>
+          {/* Sign In Section */}
+          <View style={styles.loginSection}>
             <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={handleLogin} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity 
+              onPress={handleLogin}
+              style={styles.loginLinkButton}
+              disabled={loading}
+            >
               <Text style={styles.loginLink}>Sign In</Text>
+              <Icon name="log-in-outline" size={16} color="#2563EB" />
             </TouchableOpacity>
           </View>
         </View>
@@ -294,269 +497,352 @@ export default function PersonalRegister({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
-    paddingTop: 40,
+    backgroundColor: '#F8FAFC',
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: -20,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 40,
   },
-  gradientCircle1: {
+
+  // Background Elements
+  backgroundPattern: {
     position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    top: -100,
-    right: -100,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
   },
-  gradientCircle2: {
+  gradientOrb1: {
     position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(236, 72, 153, 0.06)',
-    bottom: 100,
-    left: -50,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(37, 99, 235, 0.06)',
+    top: -80,
+    right: -60,
+    opacity: 0.8,
+  },
+  gradientOrb2: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(168, 85, 247, 0.04)',
+    bottom: 200,
+    left: -40,
+    opacity: 0.6,
+  },
+  gradientOrb3: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    top: '50%',
+    right: -20,
+    opacity: 0.5,
+  },
+
+  // Header Section
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+    zIndex: 10,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.5)',
+    zIndex: 20,
   },
   businessRegisterButton: {
     position: 'absolute',
-    top: 20,
-    right: 24,
+    top: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1F2937',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 24,
-    zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 5,
+    zIndex: 20,
   },
   businessRegisterText: {
-    fontSize: 13,
-    color: '#fff',
+    fontSize: 14,
+    color: '#ffffff',
     fontWeight: '600',
-    marginRight: 6,
-    letterSpacing: 0.3,
-  },
-  arrow: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginTop: 40,
-    marginBottom: 24,
-  },
-  logoPlaceholder: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#6366F1',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  logoInner: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#6366F1',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 32,
-    color: '#fff',
-  },
-  headerContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
+    marginLeft: 8,
     letterSpacing: 0.2,
   },
-  formContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
+  logoContainer: {
+    marginTop: 60,
+    marginBottom: 32,
+  },
+  logoWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoCore: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
     shadowRadius: 20,
-    elevation: 3,
+    elevation: 10,
+    zIndex: 2,
   },
-  inputContainer: {
-    marginBottom: 18,
+  logoRing: {
+    position: 'absolute',
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(37, 99, 235, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    zIndex: 1,
   },
-  label: {
+  titleContainer: {
+    alignItems: 'center',
+  },
+  mainTitle: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 12,
+    letterSpacing: -1,
+    textAlign: 'center',
+  },
+  mainSubtitle: {
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 26,
+    letterSpacing: 0.1,
+    paddingHorizontal: 16,
+  },
+
+  // Form Card
+  formCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 32,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.5)',
+  },
+  formHeader: {
+    marginBottom: 32,
+    alignItems: 'center',
+  },
+  formTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  formSubtitle: {
+    fontSize: 15,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+
+  // Input Styles
+  nameRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 24,
+  },
+  nameInput: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 8,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
   },
-  inputWrapper: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 56,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 16,
-    backgroundColor: '#F9FAFB',
+    transition: 'all 0.2s ease',
   },
-  inputWrapperFocused: {
-    borderColor: '#6366F1',
-    backgroundColor: '#fff',
-    shadowColor: '#6366F1',
-    shadowOffset: {
-      width: 0,
-      height: 0,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
+  inputContainerFocused: {
+    borderColor: '#2563EB',
+    backgroundColor: '#ffffff',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  iconContainer: {
+  inputIconContainer: {
     marginRight: 12,
-  },
-  iconPlaceholder: {
     width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: '#E5E7EB',
-    justifyContent: 'center',
     alignItems: 'center',
   },
-  iconPlaceholderFocused: {
-    backgroundColor: '#EEF2FF',
-  },
-  iconText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  input: {
+  textInput: {
     flex: 1,
     fontSize: 16,
-    color: '#1F2937',
+    color: '#0F172A',
     padding: 0,
+    lineHeight: 24,
   },
-  termsText: {
+  passwordToggle: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  inputIndicator: {
+    marginLeft: 8,
+  },
+  passwordStrength: {
+    marginTop: 8,
+  },
+  passwordHint: {
     fontSize: 12,
     color: '#6B7280',
+    fontStyle: 'italic',
+  },
+
+  // Terms Section
+  termsSection: {
+    marginBottom: 32,
+  },
+  termsText: {
+    fontSize: 13,
+    color: '#64748B',
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-    lineHeight: 18,
+    lineHeight: 20,
+    letterSpacing: 0.1,
   },
   termsLink: {
-    color: '#6366F1',
+    color: '#2563EB',
     fontWeight: '600',
   },
+
+  // Button Styles
   registerButton: {
     height: 56,
-    backgroundColor: '#6366F1',
-    borderRadius: 14,
+    borderRadius: 16,
+    backgroundColor: '#2563EB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#6366F1',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
+    marginBottom: 32,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 16,
+    shadowRadius: 20,
     elevation: 8,
     overflow: 'hidden',
+    position: 'relative',
   },
-  buttonShine: {
+  registerButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0.1,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    zIndex: 2,
+  },
+  registerButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.3,
+  },
+  buttonGradientOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     height: '50%',
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 1,
   },
-  registerButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  dividerContainer: {
+
+  // Divider
+  dividerSection: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 24,
   },
-  divider: {
+  dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
   },
   dividerText: {
-    fontSize: 13,
-    color: '#9CA3AF',
+    fontSize: 14,
+    color: '#94A3B8',
     marginHorizontal: 16,
     fontWeight: '500',
   },
-  loginContainer: {
+
+  // Login Section
+  loginSection: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    flexWrap: 'wrap',
   },
   loginText: {
     fontSize: 15,
-    color: '#6B7280',
+    color: '#64748B',
+  },
+  loginLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 4,
   },
   loginLink: {
     fontSize: 15,
-    color: '#6366F1',
+    color: '#2563EB',
     fontWeight: '700',
-  },
-  backArrowButton: {
-    position: 'absolute',
-    top: 50,
-    left: 24,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(79, 80, 108, 0.2)',
-    borderRadius: 22,
-    zIndex: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(13, 13, 77, 0.3)',
   },
 });

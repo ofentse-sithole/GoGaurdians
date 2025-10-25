@@ -7,8 +7,13 @@ import {
   StyleSheet, 
   ScrollView, 
   KeyboardAvoidingView, 
-  Platform 
+  Platform,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { ref, set, serverTimestamp } from 'firebase/database';
+import { auth, realtimeDB } from '../../firebaseConfig';
 
 export default function BusinessRegister({ navigation }) {
   const [businessName, setBusinessName] = useState('');
@@ -16,36 +21,212 @@ export default function BusinessRegister({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  
   const [businessNameFocused, setBusinessNameFocused] = useState(false);
   const [registrationNumberFocused, setRegistrationNumberFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
-  const handleRegister = () => {
+  const validateForm = () => {
+    // Check if all fields are filled
+    if (!businessName.trim() || !registrationNumber.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return false;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return false;
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return false;
+    }
+
+    // Check if passwords match
     if (password !== confirmPassword) {
-      alert('Passwords do not match');
+      Alert.alert('Error', 'Passwords do not match');
+      return false;
+    }
+
+    // Validate business name length
+    if (businessName.trim().length < 2) {
+      Alert.alert('Error', 'Business name must be at least 2 characters long');
+      return false;
+    }
+
+    // Validate registration number format (basic validation)
+    if (registrationNumber.trim().length < 5) {
+      Alert.alert('Error', 'Please enter a valid registration number');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleRegister = async () => {
+    if (!validateForm()) {
       return;
     }
+
+    setLoading(true);
     
-    console.log('Business register pressed', { 
-      businessName, 
-      registrationNumber, 
-      email, 
-      password 
-    });
+    try {
+      // Create user with Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update user profile with business name as display name
+      await updateProfile(user, {
+        displayName: businessName.trim(),
+      });
+
+      // Create business user document in Realtime Database
+      const businessUserRef = ref(realtimeDB, `businessUsers/${user.uid}`);
+      await set(businessUserRef, {
+        uid: user.uid,
+        email: email.toLowerCase(),
+        businessName: businessName.trim(),
+        registrationNumber: registrationNumber.trim(),
+        accountType: 'business',
+        status: 'active',
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp(),
+        loginCount: 0,
+        isEmailVerified: user.emailVerified,
+        profileCompleted: true,
+        // Business-specific data
+        businessData: {
+          industry: null,
+          employeeCount: null,
+          address: null,
+          phoneNumber: null,
+          website: null,
+          taxNumber: null,
+          bankDetails: null,
+        },
+        // Subscription and billing
+        subscription: {
+          plan: 'basic',
+          status: 'trial',
+          trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days trial
+          billingCycle: 'monthly',
+          paymentMethod: null,
+        },
+        // Settings and preferences
+        settings: {
+          notifications: {
+            email: true,
+            push: true,
+            marketing: false,
+          },
+          privacy: {
+            dataSharing: false,
+            analytics: true,
+          },
+          dashboard: {
+            theme: 'light',
+            currency: 'USD',
+            timezone: 'UTC',
+          },
+        },
+        // Permissions and roles
+        permissions: {
+          isOwner: true,
+          canManageUsers: true,
+          canManageBilling: true,
+          canViewAnalytics: true,
+        },
+        // Business metrics (initialize empty)
+        metrics: {
+          totalUsers: 0,
+          totalRevenue: 0,
+          monthlyActiveUsers: 0,
+          lastActivityAt: serverTimestamp(),
+        },
+      });
+
+      // Also create a business profile entry for easier querying
+      const businessProfileRef = ref(realtimeDB, `businesses/${user.uid}`);
+      await set(businessProfileRef, {
+        businessId: user.uid,
+        businessName: businessName.trim(),
+        registrationNumber: registrationNumber.trim(),
+        email: email.toLowerCase(),
+        status: 'active',
+        createdAt: serverTimestamp(),
+        ownerId: user.uid,
+      });
+
+      console.log('Business registration successful:', user.email, businessName);
+      
+      Alert.alert(
+        'Registration Successful!', 
+        `Welcome to Business Portal! Your business account for "${businessName}" has been created successfully. You can now access your business dashboard.`,
+        [
+          {
+            text: 'Continue',
+            onPress: () => {
+              // Navigate to business dashboard or login
+              navigation?.reset({
+                index: 0,
+                routes: [{ name: 'BusinessDashboard' }], // or BusinessLogin if you want them to login first
+              });
+            },
+          },
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Business registration error:', error);
+      
+      let errorMessage = 'An error occurred during registration';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'A business account with this email already exists';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'Business account registration is not enabled';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password is too weak. Please choose a stronger password';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        case 'permission-denied':
+          errorMessage = 'Permission denied. Please contact support';
+          break;
+        default:
+          errorMessage = error.message || 'Registration failed. Please try again';
+      }
+      
+      Alert.alert('Registration Failed', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
-    navigation.navigate('BusinessLogin');
+    navigation?.navigate('BusinessLogin');
   };
 
   const handleLogin = () => {
-    navigation.navigate('BusinessLogin');
+    navigation?.navigate('BusinessLogin');
   };
 
   const handlePersonalRegister = () => {
-    navigation.navigate('PersonalRegister');
+    navigation?.navigate('PersonalRegister');
   };
 
   return (
@@ -59,22 +240,22 @@ export default function BusinessRegister({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* Header Section with Accent */}
         {/* Back Button */}
-                <TouchableOpacity 
-                  style={styles.backArrowButton}
-                  onPress={handleBackToLogin}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.backArrow}>←</Text>
-                </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.backArrowButton}
+          onPress={handleBackToLogin}
+          activeOpacity={0.7}
+          disabled={loading}
+        >
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
 
         {/* Logo Section */}
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
             <Text style={styles.logoText}>B</Text>
           </View>
-          <Text style={styles.companyName}>Business Portal</Text>
+          <Text style={styles.companyName}>Business Profile</Text>
         </View>
 
         {/* Title Section */}
@@ -101,6 +282,7 @@ export default function BusinessRegister({ navigation }) {
                 onFocus={() => setBusinessNameFocused(true)}
                 onBlur={() => setBusinessNameFocused(false)}
                 autoCapitalize="words"
+                editable={!loading}
               />
             </View>
           </View>
@@ -120,6 +302,7 @@ export default function BusinessRegister({ navigation }) {
                 onChangeText={setRegistrationNumber}
                 onFocus={() => setRegistrationNumberFocused(true)}
                 onBlur={() => setRegistrationNumberFocused(false)}
+                editable={!loading}
               />
             </View>
           </View>
@@ -142,6 +325,7 @@ export default function BusinessRegister({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
@@ -155,7 +339,7 @@ export default function BusinessRegister({ navigation }) {
             ]}>
               <TextInput
                 style={styles.input}
-                placeholder="Create a password"
+                placeholder="Create a password (min 6 chars)"
                 placeholderTextColor="#9CA3AF"
                 value={password}
                 onChangeText={setPassword}
@@ -163,6 +347,7 @@ export default function BusinessRegister({ navigation }) {
                 onBlur={() => setPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
@@ -184,6 +369,7 @@ export default function BusinessRegister({ navigation }) {
                 onBlur={() => setConfirmPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
@@ -198,11 +384,16 @@ export default function BusinessRegister({ navigation }) {
 
           {/* Register Button */}
           <TouchableOpacity 
-            style={styles.registerButton}
+            style={[styles.registerButton, loading && styles.registerButtonDisabled]}
             onPress={handleRegister}
             activeOpacity={0.8}
+            disabled={loading}
           >
-            <Text style={styles.registerButtonText}>Create Account</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.registerButtonText}>Create Account</Text>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -218,6 +409,7 @@ export default function BusinessRegister({ navigation }) {
             <TouchableOpacity 
               onPress={handleLogin}
               activeOpacity={0.7}
+              disabled={loading}
             >
               <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
@@ -298,7 +490,7 @@ const styles = StyleSheet.create({
   companyName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1E40AF',
     marginTop: 12,
     letterSpacing: 0.5,
   },
@@ -389,6 +581,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  registerButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0.1,
+  },
   registerButtonText: {
     fontSize: 16,
     fontWeight: '700',
@@ -448,5 +644,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
     borderWidth: 1,
     borderColor: 'rgba(13, 13, 77, 0.3)',
+  },
+  backArrow: {
+    fontSize: 24,
+    color: '#1E40AF',
+    fontWeight: 'bold',
   },
 });
