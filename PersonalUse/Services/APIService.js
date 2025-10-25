@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import * as Location from 'expo-location';
 
 /**
  * API Integration Services for GoGuardians Homepage
@@ -32,12 +32,6 @@ export const sendEmergencyAlert = async (userId, incidentType, location) => {
       timestamp: new Date().toISOString(),
       status: 'ACTIVE',
     });
-
-    // Store alert ID locally for reference
-    await AsyncStorage.setItem(
-      'currentAlertId',
-      response.data.alertId
-    );
 
     return {
       success: true,

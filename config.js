@@ -1,9 +1,8 @@
 /**
  * Config.js - Environment Configuration
- * Loads environment variables and provides them across the app
+ * Provides centralized API endpoints and configuration for the app
+ * For React Native/Expo compatibility, uses direct values instead of requiring .env parsing
  */
-
-import Constants from 'expo-constants';
 
 const ENV = {
   dev: {
@@ -119,4 +118,7 @@ const getEnvVars = () => {
   return ENV.prod;
 };
 
-export default getEnvVars();
+// Export configuration
+const config = getEnvVars();
+
+export default config;

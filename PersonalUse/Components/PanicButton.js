@@ -35,12 +35,12 @@ const PanicButton = ({ onPress }) => {
 
   const pulseScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.3],
+    outputRange: [1, 1.4],
   });
 
   const pulseOpacity = pulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.8, 0],
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.7, 1, 0.7],
   });
 
   return (
@@ -63,8 +63,8 @@ const PanicButton = ({ onPress }) => {
         activeOpacity={0.8}
       >
         <View style={styles.buttonInner}>
-          <MaterialIcons name="emergency" size={45} color="#FFFFFF" />
-          <Text style={styles.buttonText}>PANIC</Text>
+          <MaterialIcons name="sos" size={40} color="#FFFFFF" />
+          <Text style={styles.buttonText}>SOS</Text>
         </View>
       </TouchableOpacity>
     </View>
@@ -75,39 +75,40 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 120,
-    height: 120,
+    width: 140,
+    height: 140,
   },
   pulseRing: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 2,
-    borderColor: '#00D9FF',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255, 0, 0, 0.4)',
   },
   button: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#00D9FF',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#FF0000',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#00D9FF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 25,
-    elevation: 25,
+    shadowColor: '#FF0000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 15,
+    elevation: 10,
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
   buttonInner: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonText: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 5,
+    color: '#FFFFFF',
+    marginTop: 2,
     letterSpacing: 1,
   },
 });

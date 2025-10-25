@@ -5,11 +5,10 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
-  SafeAreaView,
-  Platform,
   Alert,
 } from 'react-native';
-import { MaterialIcons, AntDesign } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const SmartRouteScreen = () => {
   const [activeRoute, setActiveRoute] = useState(null);

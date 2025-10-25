@@ -7,9 +7,9 @@ import {
   ScrollView,
   Text,
   Animated,
-  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const SafetyAssistantOverlay = ({
   isEmergency,

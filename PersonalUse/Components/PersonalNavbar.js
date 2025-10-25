@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import Homepage from '../screens/Homepage';
 import FamilyScreen from '../screens/FamilyScreen';
 import SmartRouteScreen from '../screens/SmartRouteScreen';

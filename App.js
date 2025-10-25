@@ -7,13 +7,17 @@ import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
 import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
 import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
 import PersonalNavbar from "./PersonalUse/Components/PersonalNavbar";
+import config from './config';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 
 const Stack = createStackNavigator();
 
 const App = () => {
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="PersonalLogin">
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="PersonalLogin">
         <Stack.Screen name="PersonalLogin" component={PersonalLogin} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalRegister" component={PersonalRegister} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalForgotPassword" component={PersonalForgotPassword} options={{ headerShown: false }} />
@@ -21,8 +25,9 @@ const App = () => {
         <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalApp" component={PersonalNavbar} options={{ headerShown: false }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 

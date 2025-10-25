@@ -5,13 +5,13 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
-  SafeAreaView,
   Alert,
   Switch,
   Modal,
   TextInput,
 } from 'react-native';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const ProfileScreen = () => {
   const [userProfile] = useState({

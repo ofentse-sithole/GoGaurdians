@@ -7,11 +7,10 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  SafeAreaView,
-  Platform,
   Alert,
 } from 'react-native';
-import { MaterialIcons, AntDesign, Feather } from '@expo/vector-icons';
+import { MaterialIcons, AntDesign } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const FamilyScreen = () => {
   const [emergencyContacts, setEmergencyContacts] = useState([
