@@ -10,6 +10,8 @@ import {
   Modal,
   TextInput,
   Image,
+  Linking,
+  Platform,
 } from 'react-native';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -317,6 +319,27 @@ const ProfileScreen = () => {
     }
   };
 
+  const defaultUssd = '*112#';
+
+  const dialUSSD = async (code = defaultUssd) => {
+    try {
+      if (Platform.OS === 'ios') {
+        Alert.alert('Note', 'USSD may not be supported on iOS devices.');
+      }
+      const encoded = code.replace(/#/g, '%23');
+      const url = `tel:${encoded}`;
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
+        Alert.alert('Not supported', 'USSD is not supported on this device.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      console.warn('USSD dial failed:', e);
+      Alert.alert('Failed', 'Could not open dialer for USSD.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -494,6 +517,21 @@ const ProfileScreen = () => {
               <View style={styles.optionInfo}>
                 <Text style={styles.optionLabel}>Sign Out</Text>
                 <Text style={styles.optionDesc}>Sign out of your account</Text>
+              </View>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
+          </TouchableOpacity>
+
+          {/* USSD Quick Action */}
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() => dialUSSD()}
+          >
+            <View style={styles.optionLeft}>
+              <MaterialIcons name="dialer-sip" size={20} color="#00D9FF" />
+              <View style={styles.optionInfo}>
+                <Text style={styles.optionLabel}>Dial USSD</Text>
+                <Text style={styles.optionDesc}>Run {defaultUssd} from your device</Text>
               </View>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
