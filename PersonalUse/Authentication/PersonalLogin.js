@@ -62,12 +62,8 @@ export default function PersonalLogin({ navigation }) {
       }
 
       console.log('Login successful:', user.email);
-      
-      // Navigate to main app (Stack.Screen name in App.js)
-      navigation?.reset({
-        index: 0,
-        routes: [{ name: 'PersonalApp' }],
-      });
+      // Do not manually navigate. The global auth listener in App.js will switch
+      // the navigator to the authenticated stack automatically.
       
     } catch (error) {
       console.error('Login error:', error);

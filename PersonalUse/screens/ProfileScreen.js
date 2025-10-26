@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -9,35 +9,314 @@ import {
   Switch,
   Modal,
   TextInput,
+  Image,
 } from 'react-native';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { auth, firestore, storage } from '../../firebaseConfig';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  updateProfile,
+  updateEmail,
+  signOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+  deleteUser,
+} from 'firebase/auth';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 const ProfileScreen = () => {
-  const [userProfile] = useState({
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+1 (555) 123-4567',
+  const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState({
+    firstName: '',
+    lastName: '',
+    name: '',
+    email: '',
+    phone: '',
     avatar: '👤',
+    avatarUrl: '',
   });
-
   const [settings, setSettings] = useState({
     locationTracking: true,
     emergencyAlerts: true,
     communityAlerts: true,
     biometricAuth: false,
   });
-
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(userProfile);
+  const [passwordMode, setPasswordMode] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' });
+  const [deleteForm, setDeleteForm] = useState({ password: '' });
 
-  const toggleSetting = (key) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const u = auth.currentUser;
+        if (!u) {
+          setLoading(false);
+          return;
+        }
+        const ref = doc(firestore, 'users', u.uid);
+        const snap = await getDoc(ref);
+        const data = snap.exists() ? snap.data() : {};
+        const firstName = data.firstName || '';
+        const lastName = data.lastName || '';
+        const displayName = data.displayName || u.displayName || [firstName, lastName].filter(Boolean).join(' ') || '';
+        const phone = data.profileData?.phoneNumber || data.phone || '';
+        const avatarUrl = data.profileData?.avatarUrl || data.avatarUrl || '';
+        const prefs = data.preferences || {};
+        const profile = {
+          firstName,
+          lastName,
+          name: displayName,
+          email: u.email || '',
+          phone,
+          avatar: '👤',
+          avatarUrl,
+        };
+        setUserProfile(profile);
+        setEditData(profile);
+        setSettings({
+          locationTracking: prefs.notifications ?? true, // fallback mapping
+          emergencyAlerts: prefs.notifications ?? true,
+          communityAlerts: prefs.emailUpdates ?? true,
+          biometricAuth: prefs.biometricAuth ?? false,
+        });
+      } catch (e) {
+        console.warn('Failed to load profile:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const toggleSetting = async (key) => {
+    try {
+      setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+      const u = auth.currentUser;
+      if (!u) return;
+      const ref = doc(firestore, 'users', u.uid);
+      await setDoc(
+        ref,
+        { preferences: { [key]: !settings[key] } },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Failed to save setting', key, e);
+    }
   };
 
-  const saveProfile = () => {
-    Alert.alert('Profile Updated', 'Your profile changes have been saved.');
-    setEditMode(false);
+  const saveProfile = async () => {
+    try {
+      setLoading(true);
+      const u = auth.currentUser;
+      if (!u) {
+        Alert.alert('Not signed in', 'Please sign in again.');
+        return;
+      }
+      const firstName = editData.firstName?.trim() || '';
+      const lastName = editData.lastName?.trim() || '';
+      const name = (firstName || lastName) ? `${firstName} ${lastName}`.trim() : (editData.name?.trim() || '');
+      const phone = editData.phone?.trim() || '';
+      const email = editData.email?.trim() || '';
+
+      // Basic validations
+      if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+        setLoading(false);
+        Alert.alert('Invalid email', 'Please enter a valid email address.');
+        return;
+      }
+      if (phone) {
+        const digits = phone.replace(/\D/g, '');
+        if (digits.length < 7) {
+          setLoading(false);
+          Alert.alert('Invalid phone', 'Please enter a valid phone number.');
+          return;
+        }
+      }
+
+      // Persist to Firestore
+      const ref = doc(firestore, 'users', u.uid);
+      await setDoc(
+        ref,
+        {
+          displayName: name,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          profileData: { phoneNumber: phone },
+        },
+        { merge: true }
+      );
+
+      // Update Auth profile display name
+      if (name && name !== (u.displayName || '')) {
+        await updateProfile(u, { displayName: name });
+      }
+
+      // Try to update auth email if changed
+      if (email && email !== (u.email || '')) {
+        try {
+          await updateEmail(u, email);
+        } catch (err) {
+          // Most likely requires recent login
+          Alert.alert(
+            'Email not updated',
+            'To change your email, please re-authenticate in the login screen and try again.'
+          );
+        }
+      }
+
+      setUserProfile({ ...userProfile, ...editData, name });
+      Alert.alert('Profile Updated', 'Your profile changes have been saved.');
+      setEditMode(false);
+    } catch (e) {
+      console.error('Save profile failed:', e);
+      Alert.alert('Error', 'Could not save your profile. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pickAndUploadAvatar = async () => {
+    try {
+      const u = auth.currentUser;
+      if (!u) {
+        Alert.alert('Not signed in', 'Please sign in again.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        // MediaTypeOptions deprecated; use MediaType array
+        mediaTypes: [ImagePicker.MediaType.Images],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+
+      setLoading(true);
+      // Resize/compress before upload
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 512 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      const response = await fetch(manipulated.uri);
+      const blob = await response.blob();
+
+      const objectRef = ref(storage, `avatars/${u.uid}.jpg`);
+      await uploadBytes(objectRef, blob, { contentType: blob.type || 'image/jpeg' });
+      const url = await getDownloadURL(objectRef);
+
+      // Save URL in Firestore
+      const userRef = doc(firestore, 'users', u.uid);
+      await setDoc(
+        userRef,
+        { profileData: { avatarUrl: url } },
+        { merge: true }
+      );
+
+      setUserProfile((prev) => ({ ...prev, avatarUrl: url }));
+      Alert.alert('Updated', 'Your profile photo has been updated.');
+    } catch (e) {
+      console.error('Avatar upload failed:', e);
+      const code = e?.code || 'unknown';
+      const msg = e?.message || '';
+      let human = 'Could not update your photo. Please try again.';
+      if (code === 'storage/unauthorized') human = 'Upload not authorized. Check Firebase Storage rules.';
+      if (code === 'storage/object-not-found') human = 'Storage path not found.';
+      if (code === 'storage/bucket-not-found') human = 'Storage bucket is misconfigured. Verify FIREBASE_STORAGE_BUCKET in your .env and app.config.js.';
+      if (code === 'storage/quota-exceeded') human = 'Storage quota exceeded on your Firebase project.';
+      Alert.alert('Upload failed', human + (msg ? `\n\nDetails: ${msg}` : ''));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onChangePassword = async () => {
+    try {
+      const { current, next, confirm } = passwordForm;
+      if (!current || !next) {
+        Alert.alert('Missing info', 'Please fill in all fields.');
+        return;
+      }
+      if (next.length < 6) {
+        Alert.alert('Weak password', 'Password must be at least 6 characters.');
+        return;
+      }
+      if (next !== confirm) {
+        Alert.alert('Mismatch', 'New passwords do not match.');
+        return;
+      }
+      const u = auth.currentUser;
+      if (!u || !u.email) {
+        Alert.alert('Not signed in', 'Please sign in again.');
+        return;
+      }
+      setLoading(true);
+      const cred = EmailAuthProvider.credential(u.email, current);
+      await reauthenticateWithCredential(u, cred);
+      await updatePassword(u, next);
+      setPasswordMode(false);
+      setPasswordForm({ current: '', next: '', confirm: '' });
+      Alert.alert('Password changed', 'Your password has been updated.');
+    } catch (e) {
+      console.error('Change password failed:', e);
+      Alert.alert('Failed', 'Could not change password. Check your current password and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onDeleteAccount = async () => {
+    try {
+      const u = auth.currentUser;
+      if (!u || !u.email) {
+        Alert.alert('Not signed in', 'Please sign in again.');
+        return;
+      }
+      if (!deleteForm.password) {
+        Alert.alert('Password required', 'Please enter your password to confirm.');
+        return;
+      }
+      setLoading(true);
+      // Re-authenticate
+      const cred = EmailAuthProvider.credential(u.email, deleteForm.password);
+      await reauthenticateWithCredential(u, cred);
+
+      // Best-effort cleanup: avatar and Firestore
+      try {
+        const objectRef = ref(storage, `avatars/${u.uid}.jpg`);
+        await deleteObject(objectRef);
+      } catch {}
+      try {
+        await deleteDoc(doc(firestore, 'users', u.uid));
+      } catch {}
+
+      await deleteUser(u);
+      setDeleteMode(false);
+      setDeleteForm({ password: '' });
+    } catch (e) {
+      console.error('Delete account failed:', e);
+      Alert.alert('Failed', 'Could not delete account. Check your password and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      Alert.alert('Sign out failed', 'Please try again.');
+    }
   };
 
   return (
@@ -53,16 +332,32 @@ const ProfileScreen = () => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {loading && (
+          <View style={styles.loadingRow}>
+            <Text style={styles.headerSubtitle}>Loading your profile…</Text>
+          </View>
+        )}
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
-            <Text style={styles.avatarEmoji}>{userProfile.avatar}</Text>
+            {userProfile.avatarUrl ? (
+              <Image
+                source={{ uri: userProfile.avatarUrl }}
+                style={styles.avatarImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.avatarEmoji}>{userProfile.avatar}</Text>
+            )}
+            <TouchableOpacity style={styles.cameraBadge} onPress={pickAndUploadAvatar}>
+              <MaterialIcons name="photo-camera" size={16} color="#000" />
+            </TouchableOpacity>
           </View>
           
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{userProfile.name}</Text>
-            <Text style={styles.profileDetail}>{userProfile.email}</Text>
-            <Text style={styles.profileDetail}>{userProfile.phone}</Text>
+            <Text style={styles.profileName}>{userProfile.name || '—'}</Text>
+            <Text style={styles.profileDetail}>{userProfile.email || '—'}</Text>
+            <Text style={styles.profileDetail}>{userProfile.phone || '—'}</Text>
           </View>
 
           <TouchableOpacity
@@ -166,7 +461,7 @@ const ProfileScreen = () => {
 
           <TouchableOpacity
             style={styles.optionCard}
-            onPress={() => Alert.alert('Change Password', 'Password change functionality')}
+            onPress={() => setPasswordMode(true)}
           >
             <View style={styles.optionLeft}>
               <MaterialIcons name="vpn-key" size={20} color="#00D9FF" />
@@ -201,6 +496,20 @@ const ProfileScreen = () => {
               <View style={styles.optionInfo}>
                 <Text style={styles.optionLabel}>Privacy Policy</Text>
                 <Text style={styles.optionDesc}>Read our privacy terms</Text>
+              </View>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={handleSignOut}
+          >
+            <View style={styles.optionLeft}>
+              <MaterialIcons name="logout" size={20} color="#FF6B6B" />
+              <View style={styles.optionInfo}>
+                <Text style={styles.optionLabel}>Sign Out</Text>
+                <Text style={styles.optionDesc}>Sign out of your account</Text>
               </View>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
@@ -244,16 +553,7 @@ const ProfileScreen = () => {
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.dangerButton}
-            onPress={() =>
-              Alert.alert(
-                'Delete Account',
-                'Are you sure? This action cannot be undone.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive' },
-                ]
-              )
-            }
+            onPress={() => setDeleteMode(true)}
           >
             <MaterialIcons name="delete-forever" size={20} color="#FF6B6B" />
             <Text style={styles.dangerButtonText}>Delete Account</Text>
@@ -280,15 +580,27 @@ const ProfileScreen = () => {
             </View>
 
             <ScrollView style={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Full Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter full name"
-                  placeholderTextColor="#999"
-                  value={editData.name}
-                  onChangeText={(text) => setEditData({ ...editData, name: text })}
-                />
+              <View style={styles.inputRow}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }] }>
+                  <Text style={styles.inputLabel}>First Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter first name"
+                    placeholderTextColor="#999"
+                    value={editData.firstName}
+                    onChangeText={(text) => setEditData({ ...editData, firstName: text })}
+                  />
+                </View>
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }] }>
+                  <Text style={styles.inputLabel}>Last Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter last name"
+                    placeholderTextColor="#999"
+                    value={editData.lastName}
+                    onChangeText={(text) => setEditData({ ...editData, lastName: text })}
+                  />
+                </View>
               </View>
 
               <View style={styles.inputGroup}>
@@ -333,6 +645,117 @@ const ProfileScreen = () => {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        visible={passwordMode}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasswordMode(false)}
+      >
+        <SafeAreaView style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Password</Text>
+              <TouchableOpacity onPress={() => setPasswordMode(false)}>
+                <AntDesign name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Current Password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={passwordForm.current}
+                  onChangeText={(t) => setPasswordForm({ ...passwordForm, current: t })}
+                  placeholder="Enter current password"
+                  placeholderTextColor="#999"
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>New Password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={passwordForm.next}
+                  onChangeText={(t) => setPasswordForm({ ...passwordForm, next: t })}
+                  placeholder="Enter new password"
+                  placeholderTextColor="#999"
+                />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm New Password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={passwordForm.confirm}
+                  onChangeText={(t) => setPasswordForm({ ...passwordForm, confirm: t })}
+                  placeholder="Re-enter new password"
+                  placeholderTextColor="#999"
+                />
+              </View>
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setPasswordMode(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveButton} onPress={onChangePassword}>
+                <Text style={styles.saveButtonText}>Update Password</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={deleteMode}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteMode(false)}
+      >
+        <SafeAreaView style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delete Account</Text>
+              <TouchableOpacity onPress={() => setDeleteMode(false)}>
+                <AntDesign name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={{ color: '#0F1419', marginBottom: 12 }}>
+                This will permanently delete your account, profile, and settings. This action cannot be undone.
+              </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Confirm with Password</Text>
+                <TextInput
+                  style={styles.input}
+                  secureTextEntry
+                  value={deleteForm.password}
+                  onChangeText={(t) => setDeleteForm({ password: t })}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#999"
+                />
+              </View>
+            </View>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setDeleteMode(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#FF6B6B' }]} onPress={onDeleteAccount}>
+                <Text style={[styles.saveButtonText, { color: '#000' }]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -371,6 +794,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  loadingRow: {
+    marginBottom: 12,
+  },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -389,9 +815,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 217, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+    position: 'relative',
   },
   avatarEmoji: {
     fontSize: 36,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    right: -6,
+    bottom: -6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#00D9FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.15)'
   },
   profileInfo: {
     flex: 1,
@@ -572,6 +1017,9 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 20,
+  },
+  inputRow: {
+    flexDirection: 'row',
   },
   inputLabel: {
     fontSize: 14,

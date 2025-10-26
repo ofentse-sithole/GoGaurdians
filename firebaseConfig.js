@@ -7,6 +7,7 @@ import {
   initializeAuth,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { getDatabase } from 'firebase/database'; // Realtime DB
 
 // Read secure values injected at build time via app.config.js -> extra.firebase
@@ -45,7 +46,10 @@ try {
 // Firestore (for personal data)
 const firestore = getFirestore(app);
 
+// Storage (for avatars and media)
+const storage = getStorage(app);
+
 // Realtime Database (for business data)
 const realtimeDB = getDatabase(app);
 
-export { auth, firestore, realtimeDB };
+export { auth, firestore, realtimeDB, storage };
