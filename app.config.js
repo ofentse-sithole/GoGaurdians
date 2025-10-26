@@ -16,7 +16,7 @@ export default ({ config }) => {
     // WARNING: Do not ship real keys in production apps. Client-side keys can be extracted.
     // Use this only for local prototyping. Prefer a backend or Firebase Function proxy.
     geminiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
   };
 
   return {
