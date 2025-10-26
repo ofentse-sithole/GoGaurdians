@@ -79,10 +79,10 @@ export default function BusinessLogin({ navigation }) {
       console.log('Business login successful:', user.email, businessData.companyName);
       
       // Navigate to business dashboard
-      // Replace 'BusinessDashboard' with your actual business screen name
+      // TODO: Replace 'PersonalApp' with actual business app route once available
       navigation?.reset({
         index: 0,
-        routes: [{ name: 'BusinessDashboard' }],
+        routes: [{ name: 'PersonalApp' }],
       });
       
     } catch (error) {

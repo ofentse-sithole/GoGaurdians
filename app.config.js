@@ -12,12 +12,19 @@ export default ({ config }) => {
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
     appId: process.env.FIREBASE_APP_ID || '',
   };
+  const ai = {
+    // WARNING: Do not ship real keys in production apps. Client-side keys can be extracted.
+    // Use this only for local prototyping. Prefer a backend or Firebase Function proxy.
+    geminiKey: process.env.GEMINI_API_KEY || '',
+    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+  };
 
   return {
     ...config,
     extra: {
       ...(config.extra || {}),
       firebase,
+      ai,
     },
     ios: {
       ...(config.ios || {}),

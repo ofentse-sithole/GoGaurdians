@@ -21,13 +21,7 @@ const ENV = {
     },
     apiEndpoints: {
       location: process.env.LOCATION_SERVICE_URL || 'http://localhost:3000/api/v1/location',
-      auth: {
-        login: process.env.AUTH_LOGIN_URL || 'http://localhost:3000/api/v1/auth/login',
-        register: process.env.AUTH_REGISTER_URL || 'http://localhost:3000/api/v1/auth/register',
-        logout: process.env.AUTH_LOGOUT_URL || 'http://localhost:3000/api/v1/auth/logout',
-        forgotPassword: process.env.AUTH_FORGOT_PASSWORD_URL || 'http://localhost:3000/api/v1/auth/forgot-password',
-        resetPassword: process.env.AUTH_RESET_PASSWORD_URL || 'http://localhost:3000/api/v1/auth/reset-password',
-      },
+      // Auth endpoints removed: using Firebase Auth SDK instead of custom backend auth routes
       emergency: {
         alert: process.env.EMERGENCY_ALERT_URL || 'http://localhost:3000/api/v1/emergency/alert',
         report: process.env.INCIDENT_REPORT_URL || 'http://localhost:3000/api/v1/incidents/report',
@@ -73,13 +67,7 @@ const ENV = {
     },
     apiEndpoints: {
       location: process.env.LOCATION_SERVICE_URL,
-      auth: {
-        login: process.env.AUTH_LOGIN_URL,
-        register: process.env.AUTH_REGISTER_URL,
-        logout: process.env.AUTH_LOGOUT_URL,
-        forgotPassword: process.env.AUTH_FORGOT_PASSWORD_URL,
-        resetPassword: process.env.AUTH_RESET_PASSWORD_URL,
-      },
+      // Auth endpoints removed: using Firebase Auth SDK instead of custom backend auth routes
       emergency: {
         alert: process.env.EMERGENCY_ALERT_URL,
         report: process.env.INCIDENT_REPORT_URL,

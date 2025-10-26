@@ -63,10 +63,10 @@ export default function PersonalLogin({ navigation }) {
 
       console.log('Login successful:', user.email);
       
-      // Navigate to your main app screen
+      // Navigate to main app (Stack.Screen name in App.js)
       navigation?.reset({
         index: 0,
-        routes: [{ name: 'MainApp' }],
+        routes: [{ name: 'PersonalApp' }],
       });
       
     } catch (error) {

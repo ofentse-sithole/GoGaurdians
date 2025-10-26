@@ -18,9 +18,11 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import PanicButton from '../Components/PanicButton';
 import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
 import { MaterialIcons, Feather, AntDesign } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { sendEmergencyAlert } from '../Services/APIService';
 
 const Homepage = () => {
+  const navigation = useNavigation();
   const [location, setLocation] = useState(null);
   const [mapRegion, setMapRegion] = useState({
     latitude: 37.78825,
@@ -126,8 +128,8 @@ const Homepage = () => {
   };
 
   const handleAIAssistantPress = () => {
-    setShowSafetyOverlay(true);
-    setIncidentType(null);
+    // Navigate to the full AI Safety Assistant screen
+    navigation.navigate('AIAssistant');
   };
 
   return (
