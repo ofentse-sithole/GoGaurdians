@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,15 +13,38 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Linking,
+  Share,
 } from 'react-native';
+import * as Location from 'expo-location';
+import * as SMS from 'expo-sms';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const FamilyScreen = () => {
   const [emergencyContacts, setEmergencyContacts] = useState([]);
+  const [location, setLocation] = useState(null);
+  const [isSharing, setIsSharing] = useState(false);
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', phone: '', relation: '' });
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setLocation(currentLocation.coords);
+      }
+    } catch (error) {
+      console.error('Error getting location:', error);
+    }
+  };
 
   const addContact = () => {
     if (newContact.name && newContact.phone) {
@@ -49,6 +72,98 @@ const FamilyScreen = () => {
     setEmergencyContacts(emergencyContacts.filter(c => c.id !== id));
   };
 
+  const shareLocationWithContact = async (contact) => {
+    try {
+      // Get fresh location
+      await getCurrentLocation();
+      
+      if (!location) {
+        Alert.alert('Location Error', 'Unable to get your current location. Please try again.');
+        return;
+      }
+
+      const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+      const appleMapsUrl = `https://maps.apple.com/?q=${location.latitude},${location.longitude}`;
+      
+      const locationMessage = `Hi ${contact.name}, I'm sharing my current location with you:\n\n📍 Location: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}\n\n🗺️ View on Google Maps: ${googleMapsUrl}\n\n🍎 View on Apple Maps: ${appleMapsUrl}\n\nSent from GoGuardians Safety App`;
+
+      Alert.alert(
+        'Share Location',
+        `Send your current location to ${contact.name}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Send SMS', 
+            onPress: () => sendLocationSMS(contact, locationMessage)
+          },
+          { 
+            text: 'Share Options', 
+            onPress: () => shareLocationGeneral(locationMessage)
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Unable to share location');
+    }
+  };
+
+  const sendLocationSMS = async (contact, message) => {
+    try {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable) {
+        await SMS.sendSMSAsync([contact.phone], message);
+        Alert.alert('Success', `Location sent to ${contact.name} via SMS`);
+      } else {
+        // Fallback to opening SMS app
+        const smsUrl = `sms:${contact.phone}?body=${encodeURIComponent(message)}`;
+        const supported = await Linking.canOpenURL(smsUrl);
+        if (supported) {
+          await Linking.openURL(smsUrl);
+        } else {
+          Alert.alert('Error', 'SMS not supported on this device');
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Unable to send SMS');
+    }
+  };
+
+  const shareLocationGeneral = async (message) => {
+    try {
+      await Share.share({
+        message: message,
+        title: 'My Current Location - GoGuardians',
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Unable to share location');
+    }
+  };
+
+  const shareLocationWithAllContacts = async () => {
+    if (emergencyContacts.length === 0) {
+      Alert.alert('No Contacts', 'Please add emergency contacts first');
+      return;
+    }
+
+    Alert.alert(
+      'Share Location with All Contacts',
+      `Send your current location to all ${emergencyContacts.length} emergency contacts?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Send to All', 
+          onPress: async () => {
+            setIsSharing(true);
+            for (const contact of emergencyContacts) {
+              await shareLocationWithContact(contact);
+            }
+            setIsSharing(false);
+            Alert.alert('Success', 'Location shared with all contacts');
+          }
+        },
+      ]
+    );
+  };
   const callContact = async (phone) => {
     try {
       const phoneUrl = `tel:${phone}`;
@@ -91,9 +206,43 @@ const FamilyScreen = () => {
             <Text style={styles.statLabel}>Trusted Contacts</Text>
           </View>
           <View style={styles.statCard}>
-            <MaterialIcons name="notifications-active" size={32} color="#00D9FF" />
-            <Text style={styles.statNumber}>Auto</Text>
-            <Text style={styles.statLabel}>Alert on Emergency</Text>
+            <MaterialIcons name="location-on" size={32} color={location ? "#22C55E" : "#F59E0B"} />
+            <Text style={styles.statNumber}>{location ? "Active" : "Off"}</Text>
+            <Text style={styles.statLabel}>Location Sharing</Text>
+          </View>
+        </View>
+
+        {/* Location Sharing Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Location Sharing</Text>
+            <TouchableOpacity
+              onPress={getCurrentLocation}
+              style={styles.refreshButton}
+            >
+              <MaterialIcons name="refresh" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.locationCard}>
+            <MaterialIcons name="my-location" size={24} color="#00D9FF" />
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationTitle}>Current Location</Text>
+              <Text style={styles.locationText}>
+                {location 
+                  ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`
+                  : 'Location not available'
+                }
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={shareLocationWithAllContacts}
+              style={[styles.shareAllButton, { opacity: isSharing ? 0.5 : 1 }]}
+              disabled={isSharing || emergencyContacts.length === 0}
+            >
+              <MaterialIcons name="share" size={20} color="#FFFFFF" />
+              <Text style={styles.shareAllText}>Share All</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -143,6 +292,12 @@ const FamilyScreen = () => {
                     onPress={() => callContact(contact.phone)}
                   >
                     <MaterialIcons name="phone" size={20} color="#00D9FF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => shareLocationWithContact(contact)}
+                  >
+                    <MaterialIcons name="share_location" size={20} color="#22C55E" />
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionButton}
@@ -414,7 +569,7 @@ const styles = StyleSheet.create({
   },
   contactActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   actionButton: {
     width: 40,
@@ -588,6 +743,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#000000',
+  },
+  refreshButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#22C55E',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 217, 255, 0.06)',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 217, 255, 0.15)',
+  },
+  locationInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  locationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#A0AFBB',
+    marginTop: 4,
+  },
+  shareAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  shareAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
