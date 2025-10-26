@@ -12,7 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-   "plugins": [
+    "plugins": [
       [
         "expo-contacts",
         {
@@ -63,6 +63,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1f9d5f0c-2f26-4e14-bc80-34c252d300af"
+      }
     }
   }
 }
