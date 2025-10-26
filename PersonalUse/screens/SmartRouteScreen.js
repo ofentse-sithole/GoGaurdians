@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, Linking, StatusBar, TextInput, ActivityIndicator, Animated, PanResponder } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, Linking, StatusBar, TextInput, ActivityIndicator, Animated, PanResponder, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -55,9 +55,30 @@ const SmartRouteScreen = () => {
   const sessionTokenRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [mode, setMode] = useState('walking'); // 'walking' | 'driving'
   // Bottom sheet drag state
-  const COLLAPSED_OFFSET = 260;
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const COLLAPSED_OFFSET = useMemo(() => {
+    // Collapse amount scales with device height (bounds: 200-360)
+    const o = Math.round(Math.min(360, Math.max(200, SCREEN_HEIGHT * 0.33)));
+    return o;
+  }, [SCREEN_HEIGHT]);
   const EXPANDED_OFFSET = 0;
-  const sheetOffset = useRef(new Animated.Value(COLLAPSED_OFFSET)).current;
+  const sheetOffset = useRef(new Animated.Value(0)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
+  // Ensure initial position respects collapsed offset
+  useEffect(() => {
+    sheetOffset.setValue(isExpanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
+  }, [COLLAPSED_OFFSET]);
+  const animateSheet = (toExpanded) => {
+    Animated.spring(sheetOffset, {
+      toValue: toExpanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET,
+      useNativeDriver: true,
+      damping: 15,
+      stiffness: 120,
+    }).start();
+    setIsExpanded(toExpanded);
+    // Persist last state
+    AsyncStorage.setItem('@smartRoute.sheetExpanded', toExpanded ? '1' : '0').catch(() => {});
+  };
   const dragStart = useRef(0);
   const panResponder = useRef(
     PanResponder.create({
@@ -76,13 +97,14 @@ const SmartRouteScreen = () => {
         sheetOffset.setValue(next);
       },
       onPanResponderRelease: (_, gesture) => {
+        // Treat a tiny movement as a tap to toggle
+        const isTap = Math.abs(gesture.dy) < 5 && Math.abs(gesture.dx) < 5;
+        if (isTap) {
+          animateSheet(!isExpanded);
+          return;
+        }
         const shouldExpand = dragStart.current + gesture.dy < COLLAPSED_OFFSET / 2;
-        Animated.spring(sheetOffset, {
-          toValue: shouldExpand ? EXPANDED_OFFSET : COLLAPSED_OFFSET,
-          useNativeDriver: true,
-          damping: 15,
-          stiffness: 120,
-        }).start();
+        animateSheet(shouldExpand);
       },
     })
   ).current;
@@ -115,6 +137,15 @@ const SmartRouteScreen = () => {
       try {
         const raw = await AsyncStorage.getItem('@smartRoute.recents');
         if (raw) setRecents(JSON.parse(raw));
+      } catch {}
+    })();
+    // Load last sheet state (expanded/collapsed)
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@smartRoute.sheetExpanded');
+        const expanded = saved === '1';
+        setIsExpanded(expanded);
+        sheetOffset.setValue(expanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
       } catch {}
     })();
     return () => {
@@ -304,7 +335,7 @@ const SmartRouteScreen = () => {
     const points = (routeCoords?.length >= 2 ? routeCoords : [origin, destination]).filter(Boolean);
     if (points.length >= 2) {
       mapRef.current.fitToCoordinates(points, {
-        edgePadding: { top: 80, bottom: 300, left: 40, right: 40 },
+        edgePadding: { top: 80, bottom: COLLAPSED_OFFSET + 40, left: 40, right: 40 },
         animated: true,
       });
     }
