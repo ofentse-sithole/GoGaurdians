@@ -9,7 +9,6 @@ import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
 import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
 import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
 import PersonalNavbar from "./PersonalUse/Components/PersonalNavbar";
-import BioAuthGate from "./PersonalUse/Components/BioAuthGate";
 import AISafetyAssistantScreen from "./PersonalUse/screens/AISafetyAssistantScreen";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { auth } from "./firebaseConfig";
@@ -41,9 +40,7 @@ const App = () => {
   }
 
   const GatedPersonalApp = () => (
-    <BioAuthGate>
-      <PersonalNavbar />
-    </BioAuthGate>
+    <PersonalNavbar />
   );
 
   return (

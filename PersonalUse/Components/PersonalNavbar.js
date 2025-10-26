@@ -20,7 +20,8 @@ const PersonalBottomNavigation = () => {
 
           switch (route.name) {
             case 'Home':
-              iconName = focused ? 'home' : 'home-outlined';
+              // MaterialIcons does not have 'home-outlined'; use 'home' for both states
+              iconName = 'home';
               break;
             case 'SmartRoute':
               iconName = focused ? 'route' : 'route';
@@ -32,7 +33,8 @@ const PersonalBottomNavigation = () => {
               iconName = focused ? 'assessment' : 'assessment';
               break;
             case 'Profile':
-              iconName = focused ? 'person' : 'person-outline';
+              // 'person-outline' exists, but to avoid family mismatch issues keep consistent
+              iconName = 'person';
               break;
             default:
               iconName = 'circle';

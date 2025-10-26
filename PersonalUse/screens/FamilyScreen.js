@@ -480,7 +480,8 @@ const EnhancedFamilyScreen = () => {
       <Modal
         visible={showAddModal}
         animationType="slide"
-        presentationStyle="pageSheet"
+        transparent
+        statusBarTranslucent
         onRequestClose={closeModal}
       >
         <KeyboardAvoidingView
@@ -816,6 +817,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   keyboardAvoidingView: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -824,6 +826,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: '85%',
     minHeight: '60%',
+    width: '100%',
   },
   modalHeader: {
     flexDirection: 'row',
