@@ -53,6 +53,9 @@ export default ({ config }) => {
           'This app uses your location to show your live position and share it with family members for safety features.',
         NSLocationAlwaysAndWhenInUseUsageDescription:
           'This app may access your location in the background to keep your family updated about your safety.',
+        UIBackgroundModes: Array.from(
+          new Set([...(config.ios?.infoPlist?.UIBackgroundModes || []), 'location'])
+        ),
         NSLocationTemporaryUsageDescriptionDictionary: {
           PreciseLocation:
             'We request precise location temporarily to provide accurate live updates for safety and family features.',

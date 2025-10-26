@@ -12,38 +12,16 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "plugins": [
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Allow GoGaurdians to access your contacts for emergency communications."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow GoGaurdians to use your location for emergency services.",
-          "locationAlwaysPermission": "Allow GoGaurdians to use your location in the background for emergency tracking.",
-          "locationWhenInUsePermission": "Allow GoGaurdians to use your location while using the app."
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow GoGaurdians to access your photos for sharing emergency information.",
-          "cameraPermission": "Allow GoGaurdians to access your camera for documenting emergencies."
-        }
-      ]
-    ],
     "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSContactsUsageDescription": "GoGaurdians needs access to contacts for emergency communications",
-        "NSLocationWhenInUseUsageDescription": "Your location is used to provide emergency services and share with trusted contacts",
-        "NSLocationAlwaysUsageDescription": "Your location is tracked for emergency response",
-        "NSCameraUsageDescription": "Camera access is needed to document emergency situations",
-        "NSPhotoLibraryUsageDescription": "Photo library access is needed to share emergency information"
-      }
+        "supportsTablet": true,
+        "config": {
+          "googleMapsApiKey": "YOUR_IOS_GOOGLE_MAPS_API_KEY"
+        },
+        "infoPlist": {
+          "NSLocationWhenInUseUsageDescription": "This app uses your location to show your live position and share it with family members for safety features.",
+          "NSLocationAlwaysAndWhenInUseUsageDescription": "This app may access your location in the background to keep your family updated about your safety.",
+          "UIBackgroundModes": ["location"]
+        }
     },
     "android": {
       "adaptiveIcon": {
@@ -51,21 +29,31 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-        "CAMERA",
-        "READ_CONTACTS",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
-      ]
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_API_KEY"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow $(PRODUCT_NAME) to access your location to show your live position and share it with family members.",
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to access your location even when the app is in the background to keep family members updated."
+        }
+      ]
     ]
   }
 }
