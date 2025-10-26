@@ -30,40 +30,93 @@ const Homepage = () => {
     latitudeDelta: 0.0922,
     longitudeDelta: 0.0421,
   });
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [showSafetyOverlay, setShowSafetyOverlay] = useState(false);
   const [incidentType, setIncidentType] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const mapRef = useRef(null);
+  
   // Bottom sheet drag state
-  const COLLAPSED_OFFSET = 220;
-  const EXPANDED_OFFSET = 0;
-  const sheetOffset = useRef(new Animated.Value(COLLAPSED_OFFSET)).current;
-  const dragStart = useRef(0);
+  const COLLAPSED_HEIGHT = 280; // Height when collapsed
+  const EXPANDED_HEIGHT = 500;  // Height when expanded
+  const [isExpanded, setIsExpanded] = useState(false);
+  const sheetHeight = useRef(new Animated.Value(COLLAPSED_HEIGHT)).current;
+  const dragY = useRef(0);
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 5,
-      onPanResponderGrant: () => {
-        // capture current offset
-        sheetOffset.stopAnimation((value) => {
-          dragStart.current = value;
+      onStartShouldSetPanResponder: (evt, gestureState) => true,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only respond to vertical gestures with enough movement
+        return Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onMoveShouldSetPanResponderCapture: () => false,
+      onPanResponderGrant: (evt, gestureState) => {
+        // Store the current drag position
+        sheetHeight.stopAnimation((value) => {
+          dragY.current = value;
         });
       },
-      onPanResponderMove: (_, gesture) => {
-        const next = Math.min(
-          COLLAPSED_OFFSET,
-          Math.max(EXPANDED_OFFSET, dragStart.current + gesture.dy)
+      onPanResponderMove: (evt, gestureState) => {
+        // Calculate new height based on drag direction
+        const newHeight = dragY.current - gestureState.dy; // Negative dy = drag up = increase height
+        
+        // Constrain between collapsed and expanded heights
+        const constrainedHeight = Math.min(
+          EXPANDED_HEIGHT,
+          Math.max(COLLAPSED_HEIGHT, newHeight)
         );
-        sheetOffset.setValue(next);
+        
+        sheetHeight.setValue(constrainedHeight);
       },
-      onPanResponderRelease: (_, gesture) => {
-        const shouldExpand = dragStart.current + gesture.dy < COLLAPSED_OFFSET / 2;
-        Animated.spring(sheetOffset, {
-          toValue: shouldExpand ? EXPANDED_OFFSET : COLLAPSED_OFFSET,
-          useNativeDriver: true,
-          damping: 15,
-          stiffness: 120,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: (evt, gestureState) => {
+        const currentHeight = dragY.current - gestureState.dy;
+        const velocity = -gestureState.vy; // Invert velocity (positive = up)
+        
+        // Determine final state based on velocity and position
+        let shouldExpand = false;
+        
+        if (velocity > 1) {
+          // Fast upward swipe
+          shouldExpand = true;
+        } else if (velocity < -1) {
+          // Fast downward swipe
+          shouldExpand = false;
+        } else {
+          // Slow gesture, decide based on position
+          const midPoint = (COLLAPSED_HEIGHT + EXPANDED_HEIGHT) / 2;
+          shouldExpand = currentHeight > midPoint;
+        }
+        
+        const targetHeight = shouldExpand ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
+        setIsExpanded(shouldExpand);
+        
+        // Animate to final position
+        Animated.spring(sheetHeight, {
+          toValue: targetHeight,
+          useNativeDriver: false,
+          damping: 25,
+          stiffness: 200,
+          velocity: velocity,
+        }).start();
+      },
+      onPanResponderTerminate: (evt, gestureState) => {
+        // Snap to nearest position on termination
+        const currentHeight = dragY.current - gestureState.dy;
+        const midPoint = (COLLAPSED_HEIGHT + EXPANDED_HEIGHT) / 2;
+        const shouldExpand = currentHeight > midPoint;
+        const targetHeight = shouldExpand ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
+        
+        setIsExpanded(shouldExpand);
+        
+        Animated.spring(sheetHeight, {
+          toValue: targetHeight,
+          useNativeDriver: false,
+          damping: 25,
+          stiffness: 200,
         }).start();
       },
     })
@@ -71,24 +124,117 @@ const Homepage = () => {
 
   useEffect(() => {
     requestLocationPermission();
-  }, []);
+    
+    // Watch for location changes
+    let locationSubscription;
+    const watchLocation = async () => {
+      if (locationPermissionGranted) {
+        locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000, // Update every 10 seconds
+            distanceInterval: 10, // Update every 10 meters
+          },
+          (newLocation) => {
+            const coords = newLocation.coords;
+            setLocation(coords);
+            console.log('Location updated:', coords);
+          }
+        );
+      }
+    };
+
+    watchLocation();
+
+    return () => {
+      if (locationSubscription) {
+        locationSubscription.remove();
+      }
+    };
+  }, [locationPermissionGranted]);
 
   const requestLocationPermission = async () => {
     try {
+      // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
+      
       if (status === 'granted') {
-        const currentLocation = await Location.getCurrentPositionAsync({});
+        setLocationPermissionGranted(true);
+        
+        // Get current location with high accuracy
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation,
+          maximumAge: 10000,
+          timeout: 15000,
+        });
+        
         const coords = currentLocation.coords;
         setLocation(coords);
-        setMapRegion({
+        
+        // Update map region to center on current location
+        const newRegion = {
           latitude: coords.latitude,
           longitude: coords.longitude,
-          latitudeDelta: 0.0922,
-          longitudeDelta: 0.0421,
-        });
+          latitudeDelta: 0.005, // Smaller delta for closer zoom
+          longitudeDelta: 0.005,
+        };
+        setMapRegion(newRegion);
+        
+        // Animate map to new location
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(newRegion, 1000);
+        }
+        
+        console.log('Location updated:', coords);
+      } else {
+        Alert.alert(
+          'Location Permission Required',
+          'Please enable location services to see your current location on the map.',
+          [
+            { text: 'Cancel' },
+            { text: 'Settings', onPress: () => Location.requestForegroundPermissionsAsync() }
+          ]
+        );
       }
     } catch (error) {
       console.error('Location permission error:', error);
+      Alert.alert(
+        'Location Error',
+        'Unable to get your current location. Please check your location settings.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const centerMapOnUser = async () => {
+    try {
+      if (!locationPermissionGranted) {
+        await requestLocationPermission();
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      
+      const coords = currentLocation.coords;
+      setLocation(coords);
+      
+      const newRegion = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      };
+      
+      setMapRegion(newRegion);
+      
+      if (mapRef.current) {
+        mapRef.current.animateToRegion(newRegion, 1000);
+      }
+    } catch (error) {
+      console.error('Error centering map:', error);
+      Alert.alert('Error', 'Unable to get your current location');
     }
   };
 
@@ -112,7 +258,20 @@ const Homepage = () => {
     setIncidentType(type);
     setShowSafetyOverlay(true);
 
-    const coords = location || mapRegion;
+    // Get most recent location
+    let coords = location;
+    if (!coords) {
+      try {
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        coords = currentLocation.coords;
+        setLocation(coords);
+      } catch (error) {
+        coords = mapRegion; // Fallback to map region
+      }
+    }
+
     // TODO: replace with authenticated user id
     const userId = 'demo-user';
     try {
@@ -127,9 +286,25 @@ const Homepage = () => {
     }
   };
 
+  const toggleBottomSheet = () => {
+    const newExpanded = !isExpanded;
+    setIsExpanded(newExpanded);
+    
+    Animated.spring(sheetHeight, {
+      toValue: newExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT,
+      useNativeDriver: false,
+      damping: 25,
+      stiffness: 200,
+    }).start();
+  };
+
   const handleAIAssistantPress = () => {
     // Navigate to the full AI Safety Assistant screen
     navigation.navigate('AIAssistant');
+  };
+
+  const handleFamilyPress = () => {
+    navigation.navigate('Family');
   };
 
   return (
@@ -137,12 +312,17 @@ const Homepage = () => {
       <StatusBar barStyle="dark-content" backgroundColor="#F4F7FA" />
       
       <MapView
+        ref={mapRef}
         style={styles.map}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        initialRegion={mapRegion}
+        region={mapRegion}
         onRegionChangeComplete={setMapRegion}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        followsUserLocation={false}
+        loadingEnabled={true}
+        loadingIndicatorColor="#007AFF"
+        loadingBackgroundColor="#F4F7FA"
       >
         {location && (
           <Marker
@@ -150,14 +330,17 @@ const Homepage = () => {
               latitude: location.latitude,
               longitude: location.longitude,
             }}
-            title="Your Location"
+            title="Your Current Location"
+            description="You are here"
             pinColor="#007AFF"
           />
         )}
       </MapView>
 
       <View style={styles.header}>
-        <View style={styles.headerButtonSpacer} />
+        <TouchableOpacity style={styles.headerButton} onPress={centerMapOnUser}>
+          <MaterialIcons name="my-location" size={24} color="#333" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>GoGuardians</Text>
         <TouchableOpacity style={styles.headerButton} onPress={() => setShowSettings(true)}>
           <MaterialIcons name="settings" size={24} color="#333" />
@@ -168,19 +351,36 @@ const Homepage = () => {
       <View style={styles.statusPillContainer}>
         <View style={styles.statusPill}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusPillText}>Safe</Text>
+          <Text style={styles.statusPillText}>
+            {location ? 'Location Active' : 'Getting Location...'}
+          </Text>
         </View>
       </View>
 
       <Animated.View style={[
         styles.bottomSheet,
-        { transform: [{ translateY: sheetOffset }] },
+        { 
+          height: sheetHeight,
+        },
       ]}>
-        <View style={styles.bottomSheetHandle} {...panResponder.panHandlers} />
+        {/* Drag Handle Area */}
+        <TouchableOpacity 
+          style={styles.dragHandleArea} 
+          {...panResponder.panHandlers}
+          onPress={toggleBottomSheet}
+          activeOpacity={0.7}
+        >
+          <View style={styles.bottomSheetHandle} />
+          <Text style={styles.dragHint}>
+            {isExpanded ? 'Swipe down to collapse' : 'Swipe up for more options'}
+          </Text>
+        </TouchableOpacity>
         
         <View style={styles.statusSection}>
-          <View style={styles.statusIndicator} />
-          <Text style={styles.statusText}>You are safe</Text>
+          <View style={[styles.statusIndicator, { backgroundColor: location ? '#22C55E' : '#F59E0B' }]} />
+          <Text style={styles.statusText}>
+            {location ? 'You are safe' : 'Getting your location...'}
+          </Text>
         </View>
 
         <View style={styles.panicButtonContainer}>
@@ -195,15 +395,67 @@ const Homepage = () => {
             <Feather name="shield" size={24} color="#007AFF" />
             <Text style={styles.actionLabel}>Safety Tips</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleFamilyPress}>
             <MaterialIcons name="group" size={24} color="#007AFF" />
             <Text style={styles.actionLabel}>Family</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
-            <AntDesign name="enviroment" size={24} color="#007AFF" />
-            <Text style={styles.actionLabel}>Safe Places</Text>
+          <TouchableOpacity style={styles.actionButton} onPress={toggleBottomSheet}>
+            <MaterialIcons name={isExpanded ? "expand_less" : "expand_more"} size={24} color="#007AFF" />
+            <Text style={styles.actionLabel}>More</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Expanded Content */}
+        {isExpanded && (
+          <View style={styles.expandedContent}>
+            <View style={styles.expandedSection}>
+              <Text style={styles.expandedTitle}>Emergency Contacts</Text>
+              <TouchableOpacity style={styles.expandedButton} onPress={handleFamilyPress}>
+                <MaterialIcons name="contacts" size={20} color="#007AFF" />
+                <Text style={styles.expandedButtonText}>Manage Contacts</Text>
+                <MaterialIcons name="arrow_forward_ios" size={16} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.expandedSection}>
+              <Text style={styles.expandedTitle}>Quick Emergency Actions</Text>
+              <View style={styles.expandedActions}>
+                <TouchableOpacity 
+                  style={[styles.expandedActionButton, styles.medicalButton]}
+                  onPress={() => sendAlert('MEDICAL')}
+                >
+                  <MaterialIcons name="local_hospital" size={20} color="#FFFFFF" />
+                  <Text style={[styles.expandedActionText, styles.whiteText]}>Medical Emergency</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.expandedActionButton, styles.securityButton]}
+                  onPress={() => sendAlert('SECURITY')}
+                >
+                  <MaterialIcons name="security" size={20} color="#FFFFFF" />
+                  <Text style={[styles.expandedActionText, styles.whiteText]}>Security Threat</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.expandedActionButton, styles.helpButton]}
+                  onPress={() => sendAlert('HELP')}
+                >
+                  <MaterialIcons name="help" size={20} color="#FFFFFF" />
+                  <Text style={[styles.expandedActionText, styles.whiteText]}>General Help</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.expandedSection}>
+              <Text style={styles.expandedTitle}>Location & Safety</Text>
+              <TouchableOpacity style={styles.expandedButton} onPress={centerMapOnUser}>
+                <MaterialIcons name="my_location" size={20} color="#007AFF" />
+                <Text style={styles.expandedButtonText}>Update My Location</Text>
+                <MaterialIcons name="refresh" size={16} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </Animated.View>
 
       {showSafetyOverlay && (
@@ -230,7 +482,23 @@ const Homepage = () => {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.settingsList}>
-              {/* Settings items here */}
+              <TouchableOpacity style={styles.settingsItem} onPress={requestLocationPermission}>
+                <MaterialIcons name="location-on" size={24} color="#007AFF" />
+                <View style={styles.settingsItemText}>
+                  <Text style={styles.settingsItemTitle}>Location Services</Text>
+                  <Text style={styles.settingsItemSubtitle}>
+                    {locationPermissionGranted ? 'Enabled' : 'Tap to enable'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.settingsItem} onPress={centerMapOnUser}>
+                <MaterialIcons name="my-location" size={24} color="#007AFF" />
+                <View style={styles.settingsItemText}>
+                  <Text style={styles.settingsItemTitle}>Center on My Location</Text>
+                  <Text style={styles.settingsItemSubtitle}>Update map to current position</Text>
+                </View>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </SafeAreaView>
@@ -257,10 +525,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     zIndex: 10,
-  },
-  headerButtonSpacer: {
-    width: 44,
-    height: 44,
   },
   headerButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
@@ -321,7 +585,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     paddingHorizontal: 20,
     shadowColor: '#000',
@@ -329,14 +592,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 10,
+    overflow: 'hidden',
+  },
+  dragHandleArea: {
+    paddingTop: 16,
+    paddingBottom: 8,
+    alignItems: 'center',
+    // Make the drag area larger for easier interaction
   },
   bottomSheetHandle: {
     width: 40,
     height: 5,
     borderRadius: 2.5,
     backgroundColor: '#D1D5DB',
-    alignSelf: 'center',
-    marginBottom: 12,
+  },
+  dragHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
   },
   statusSection: {
     flexDirection: 'row',
@@ -401,6 +675,90 @@ const styles = StyleSheet.create({
   },
   settingsList: {
     flex: 1,
+  },
+  settingsItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  settingsItemText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  settingsItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  settingsItemSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  expandedContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  expandedSection: {
+    marginBottom: 20,
+  },
+  expandedTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  expandedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  expandedButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+    flex: 1,
+    marginLeft: 8,
+  },
+  expandedActions: {
+    gap: 10,
+  },
+  expandedActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  medicalButton: {
+    backgroundColor: '#EF4444',
+  },
+  securityButton: {
+    backgroundColor: '#F97316',
+  },
+  helpButton: {
+    backgroundColor: '#EAB308',
+  },
+  expandedActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  whiteText: {
+    color: '#FFFFFF',
   },
 });
 
