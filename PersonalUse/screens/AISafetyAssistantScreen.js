@@ -46,6 +46,15 @@ export default function AISafetyAssistantScreen({ navigation }) {
       setThreatResult(result);
     } catch (e) {
       console.error('Assess error', e);
+      const msg = String(e?.message || '');
+      if (e?.code === 'AI_UNAVAILABLE' || msg.startsWith('AI_UNAVAILABLE')) {
+        Alert.alert(
+          'AI unavailable',
+          'Gemini is not configured. Add GEMINI_API_KEY to your .env and rebuild the app.'
+        );
+      } else {
+        Alert.alert('Unable to assess', 'There was a problem getting an AI assessment. Please try again.');
+      }
     } finally {
       setIsAssessing(false);
     }
@@ -59,6 +68,15 @@ export default function AISafetyAssistantScreen({ navigation }) {
       setGuidanceResult(result);
     } catch (e) {
       console.error('Guidance error', e);
+      const msg = String(e?.message || '');
+      if (e?.code === 'AI_UNAVAILABLE' || msg.startsWith('AI_UNAVAILABLE')) {
+        Alert.alert(
+          'AI unavailable',
+          'Gemini is not configured. Add GEMINI_API_KEY to your .env and rebuild the app.'
+        );
+      } else {
+        Alert.alert('Unable to get guidance', 'There was a problem getting AI guidance. Please try again.');
+      }
     } finally {
       setIsGuiding(false);
     }
