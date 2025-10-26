@@ -62,7 +62,9 @@ const SmartRouteScreen = () => {
   const [showSafetyOverlay, setShowSafetyOverlay] = useState(false);
   const [incidentType, setIncidentType] = useState(null);
   const [showResponseBanner, setShowResponseBanner] = useState(false);
+  const [showDoubleTapBanner, setShowDoubleTapBanner] = useState(true);
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const lastTapRef = useRef({ t: 0, coord: null });
   // Bottom sheet drag state
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const COLLAPSED_OFFSET = useMemo(() => {
@@ -271,6 +273,25 @@ const SmartRouteScreen = () => {
     return () => clearTimeout(t);
   }, [showResponseBanner]);
 
+  // Double-tap to select destination: detect two taps within a short window
+  const handleMapPress = (e) => {
+    const now = Date.now();
+    const { coordinate } = e.nativeEvent || {};
+    if (!coordinate) return;
+    if (now - (lastTapRef.current.t || 0) < 300) {
+      setDestination(coordinate);
+      setShowDoubleTapBanner(false);
+    }
+    lastTapRef.current = { t: now, coord: coordinate };
+  };
+
+  // Auto-hide the double-tap instruction banner after a short delay on first open
+  useEffect(() => {
+    if (!showDoubleTapBanner) return;
+    const t = setTimeout(() => setShowDoubleTapBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showDoubleTapBanner]);
+
   // Center map on user's current location and update origin/region
   const centerMapOnUser = async () => {
     try {
@@ -451,12 +472,22 @@ const SmartRouteScreen = () => {
           </View>
         </View>
       )}
+      {/* Instruction banner: double tap */}
+      {showDoubleTapBanner && (
+        <View style={styles.instructionBannerContainer} pointerEvents="box-none">
+          <View style={styles.instructionBanner}>
+            <MaterialIcons name="touch-app" size={18} color="#0F172A" />
+            <Text style={styles.instructionBannerText}>Double tap on the map to select destination</Text>
+          </View>
+        </View>
+      )}
       <MapView
         ref={mapRef}
         style={styles.map}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={region}
         onRegionChangeComplete={setRegion}
+        onPress={handleMapPress}
         showsUserLocation
         showsMyLocationButton
         onLongPress={(e) => setDestination(e.nativeEvent.coordinate)}
@@ -1068,6 +1099,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   responseBannerText: { fontSize: 13, fontWeight: '700', color: '#1F2937' },
+  instructionBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 70 : 120,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 11,
+  },
+  instructionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    gap: 8,
+  },
+  instructionBannerText: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
 });
 
 export default SmartRouteScreen;
