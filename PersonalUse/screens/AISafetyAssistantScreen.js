@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, Share, Alert, Platform } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
@@ -25,6 +25,8 @@ export default function AISafetyAssistantScreen({ navigation }) {
   const [isAssessing, setIsAssessing] = useState(false);
   const [isGuiding, setIsGuiding] = useState(false);
   const [sendingSOS, setSendingSOS] = useState(false);
+  const lastAssessAt = useRef(0);
+  const lastGuideAt = useRef(0);
 
   const threatForm = useForm({
     resolver: zodResolver(threatSchema),
@@ -39,11 +41,47 @@ export default function AISafetyAssistantScreen({ navigation }) {
   });
 
   const onAssess = async (values) => {
+    // Simple client-side cooldown to respect free-tier RPM
+    const now = Date.now();
+    if (now - lastAssessAt.current < 10000) {
+      const remaining = Math.ceil((10000 - (now - lastAssessAt.current)) / 1000);
+      Alert.alert('Please wait', `Try again in about ${remaining}s to avoid rate limits.`);
+      return;
+    }
+    lastAssessAt.current = now;
     setIsAssessing(true);
     setThreatResult(null);
     try {
       const result = await assessThreatLevel(values);
       setThreatResult(result);
+      // Auto-escalation logic based on threat level
+      const level = String(result?.threatLevel || '').toUpperCase();
+      if (level === 'HIGH') {
+        try {
+          // Show a prominent warning, then auto-open dialer and share location
+          Alert.alert(
+            'High threat detected',
+            'We will open the emergency dialer (112) and a share-location sheet so responders or contacts can find you.',
+            [{ text: 'OK' }],
+            { cancelable: true }
+          );
+          // Small delays to avoid UI race conditions between alert, dialer and share sheet
+          setTimeout(() => {
+            dialEmergency();
+          }, 400);
+          setTimeout(() => {
+            shareLocation();
+          }, 1800);
+        } catch (err) {
+          console.warn('Auto-escalation error', err);
+        }
+      } else if (level === 'MEDIUM') {
+        // Soft prompt suggesting a call, no automatic actions
+        Alert.alert(
+          'Consider calling for help',
+          'If you feel unsafe, consider calling 112 (mobile), 10111 (SAPS), or 10177 (ambulance/fire).'
+        );
+      }
     } catch (e) {
       console.error('Assess error', e);
       const msg = String(e?.message || '');
@@ -52,6 +90,8 @@ export default function AISafetyAssistantScreen({ navigation }) {
           'AI unavailable',
           'Gemini is not configured. Add GEMINI_API_KEY to your .env and rebuild the app.'
         );
+      } else if (e?.code === 'AI_RATE_LIMIT') {
+        Alert.alert('Rate limit', 'You’ve reached the free tier limit for now. Please wait a minute and try again.');
       } else {
         Alert.alert('Unable to assess', 'There was a problem getting an AI assessment. Please try again.');
       }
@@ -61,6 +101,13 @@ export default function AISafetyAssistantScreen({ navigation }) {
   };
 
   const onGuide = async (values) => {
+    const now = Date.now();
+    if (now - lastGuideAt.current < 10000) {
+      const remaining = Math.ceil((10000 - (now - lastGuideAt.current)) / 1000);
+      Alert.alert('Please wait', `Try again in about ${remaining}s to avoid rate limits.`);
+      return;
+    }
+    lastGuideAt.current = now;
     setIsGuiding(true);
     setGuidanceResult(null);
     try {
@@ -74,6 +121,8 @@ export default function AISafetyAssistantScreen({ navigation }) {
           'AI unavailable',
           'Gemini is not configured. Add GEMINI_API_KEY to your .env and rebuild the app.'
         );
+      } else if (e?.code === 'AI_RATE_LIMIT') {
+        Alert.alert('Rate limit', 'You’ve reached the free tier limit for now. Please wait a minute and try again.');
       } else {
         Alert.alert('Unable to get guidance', 'There was a problem getting AI guidance. Please try again.');
       }
@@ -308,6 +357,13 @@ export default function AISafetyAssistantScreen({ navigation }) {
                       <Text style={{ fontWeight: '600' }}>Threat Level:</Text>
                       <ThreatBadge level={threatResult.threatLevel} />
                     </View>
+                    {String(threatResult.threatLevel).toUpperCase() === 'MEDIUM' && (
+                      <View style={styles.calloutWarn}>
+                        <Text style={styles.calloutWarnText}>
+                          Suggestion: If you feel unsafe, consider calling 112 (mobile), 10111 (SAPS), or 10177 (ambulance/fire).
+                        </Text>
+                      </View>
+                    )}
                     <Text style={{ fontWeight: '600', marginBottom: 6 }}>Advice:</Text>
                     <Text style={styles.mutedText}>{threatResult.advice}</Text>
                   </View>
@@ -435,4 +491,6 @@ const styles = StyleSheet.create({
   emergencyBar: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
   emergencyBtn: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   emergencyBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  calloutWarn: { backgroundColor: '#FEF3C7', borderColor: '#FCD34D', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 },
+  calloutWarnText: { color: '#92400E' },
 });
