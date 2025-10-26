@@ -1,22 +1,34 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  getReactNativePersistence, 
+import {
+  getAuth,
+  getReactNativePersistence,
   initializeAuth,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database'; //Realtime DB
+import { getDatabase } from 'firebase/database'; // Realtime DB
+
+// Read secure values injected at build time via app.config.js -> extra.firebase
+const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
+const firebaseExtra = extra.firebase || {};
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD_uvQqGPm9a3MOWo0PcRA8Ki8PT89QYV0",
-  authDomain: "gogaurdian-a48a3.firebaseapp.com",
-  databaseURL: "https://gogaurdian-a48a3-default-rtdb.firebaseio.com",
-  projectId: "gogaurdian-a48a3",
-  storageBucket: "gogaurdian-a48a3.firebasestorage.app",
-  messagingSenderId: "936286639319",
-  appId: "1:936286639319:web:ddb3755c3159ce56208c92"
+  apiKey: firebaseExtra.apiKey,
+  authDomain: firebaseExtra.authDomain,
+  databaseURL: firebaseExtra.databaseURL,
+  projectId: firebaseExtra.projectId,
+  storageBucket: firebaseExtra.storageBucket,
+  messagingSenderId: firebaseExtra.messagingSenderId,
+  appId: firebaseExtra.appId,
 };
+
+// Basic sanity check to help during local setup
+if (!firebaseConfig.apiKey || !firebaseConfig.appId) {
+  console.warn(
+    '[firebaseConfig] Missing Firebase credentials. Check your .env and app.config.js injection.'
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 

@@ -173,10 +173,11 @@ export default function BusinessRegister({ navigation }) {
           {
             text: 'Continue',
             onPress: () => {
-              // Navigate to business dashboard or login
+              // Navigate to business app
+              // TODO: Replace 'PersonalApp' with actual business app route once available
               navigation?.reset({
                 index: 0,
-                routes: [{ name: 'BusinessDashboard' }], // or BusinessLogin if you want them to login first
+                routes: [{ name: 'PersonalApp' }], // or BusinessLogin if you want them to login first
               });
             },
           },
