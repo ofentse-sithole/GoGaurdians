@@ -18,6 +18,11 @@ export default ({ config }) => {
     geminiKey: process.env.GEMINI_API_KEY || '',
     model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
   };
+  const maps = {
+    // Web services key used for Places Autocomplete and Directions HTTP APIs
+    // Prefer MAPS_WEB_API_KEY if provided, otherwise fall back to MAPS_API_KEY
+    webKey: process.env.MAPS_WEB_API_KEY || process.env.MAPS_API_KEY || '',
+  };
 
   return {
     ...config,
@@ -38,6 +43,7 @@ export default ({ config }) => {
       ...(config.extra || {}),
       firebase,
       ai,
+      maps,
     },
     ios: {
       ...(config.ios || {}),

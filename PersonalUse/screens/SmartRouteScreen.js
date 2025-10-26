@@ -1,468 +1,810 @@
-import React, { useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, Linking, StatusBar, TextInput, ActivityIndicator, Animated, PanResponder, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import PanicButton from '../Components/PanicButton';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+
+// Helper to reference imported symbols and satisfy strict no-unused-vars lint
+function __use(..._args) { /* no-op */ }
+
+// Simple haversine distance in km
+const haversineKm = (a, b) => {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371; // km
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return R * c;
+};
 
 const SmartRouteScreen = () => {
-  const [activeRoute, setActiveRoute] = useState(null);
-  const [routes] = useState([
-    {
-      id: 1,
-      name: 'Safest Route',
-      time: '12 min',
-      distance: '2.4 km',
-      type: 'recommended',
-      safetyScore: 95,
-      incidents: 0,
-      description: 'Well-lit streets, high police presence',
-    },
-    {
-      id: 2,
-      name: 'Quickest Route',
-      time: '8 min',
-      distance: '1.9 km',
-      type: 'fast',
-      safetyScore: 72,
-      incidents: 2,
-      description: 'Some industrial areas',
-    },
-    {
-      id: 3,
-      name: 'Scenic Route',
-      time: '15 min',
-      distance: '3.1 km',
-      type: 'scenic',
-      safetyScore: 88,
-      incidents: 1,
-      description: 'Through parks and main streets',
-    },
-  ]);
+  // Reference imported JSX/Icons explicitly so ESLint recognizes usage across JSX
+  __use(View, Text, TouchableOpacity, SafeAreaView, MapView, Marker, Polyline, MaterialIcons, Entypo, PanicButton, TextInput, ActivityIndicator, Animated, PanResponder);
+  const navigation = useNavigation();
+  const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
+  const webKey = extra?.maps?.webKey || '';
+  const mapRef = useRef(null);
+  const [origin, setOrigin] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [region, setRegion] = useState({
+    latitude: -26.2041,
+    longitude: 28.0473,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+  const [loadingLocation, setLoadingLocation] = useState(false);
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recents, setRecents] = useState([]);
+  const [routeCoords, setRouteCoords] = useState([]);
+  const [routeInfo, setRouteInfo] = useState(null); // { distanceText, durationText }
+  const searchTimer = useRef(null);
+  const sessionTokenRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const [mode, setMode] = useState('walking'); // 'walking' | 'driving'
+  // Bottom sheet drag state
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const COLLAPSED_OFFSET = useMemo(() => {
+    // Collapse amount scales with device height (bounds: 200-360)
+    const o = Math.round(Math.min(360, Math.max(200, SCREEN_HEIGHT * 0.33)));
+    return o;
+  }, [SCREEN_HEIGHT]);
+  const EXPANDED_OFFSET = 0;
+  const sheetOffset = useRef(new Animated.Value(0)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
+  // Ensure initial position respects collapsed offset
+  useEffect(() => {
+    sheetOffset.setValue(isExpanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
+  }, [COLLAPSED_OFFSET]);
+  const animateSheet = (toExpanded) => {
+    Animated.spring(sheetOffset, {
+      toValue: toExpanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET,
+      useNativeDriver: true,
+      damping: 15,
+      stiffness: 120,
+    }).start();
+    setIsExpanded(toExpanded);
+    // Persist last state
+    AsyncStorage.setItem('@smartRoute.sheetExpanded', toExpanded ? '1' : '0').catch(() => {});
+  };
+  const dragStart = useRef(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 5,
+      onPanResponderGrant: () => {
+        sheetOffset.stopAnimation((value) => {
+          dragStart.current = value;
+        });
+      },
+      onPanResponderMove: (_, gesture) => {
+        const next = Math.min(
+          COLLAPSED_OFFSET,
+          Math.max(EXPANDED_OFFSET, dragStart.current + gesture.dy)
+        );
+        sheetOffset.setValue(next);
+      },
+      onPanResponderRelease: (_, gesture) => {
+        // Treat a tiny movement as a tap to toggle
+        const isTap = Math.abs(gesture.dy) < 5 && Math.abs(gesture.dx) < 5;
+        if (isTap) {
+          animateSheet(!isExpanded);
+          return;
+        }
+        const shouldExpand = dragStart.current + gesture.dy < COLLAPSED_OFFSET / 2;
+        animateSheet(shouldExpand);
+      },
+    })
+  ).current;
 
-  const [savedLocations] = useState([
-    { id: 1, name: 'Home', icon: '🏠', distance: '1.2 km away' },
-    { id: 2, name: 'Work', icon: '💼', distance: '2.5 km away' },
-    { id: 3, name: 'Hospital', icon: '🏥', distance: '0.8 km away' },
-  ]);
+  useEffect(() => {
+    // Grab current location on mount to align with app's map-first UX
+    (async () => {
+      try {
+        setLoadingLocation(true);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Location needed', 'Enable location to plan a smart route.');
+          setLoadingLocation(false);
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({});
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        setOrigin(coords);
+        setRegion((r) => ({ ...r, ...coords }));
+        setLoadingLocation(false);
+      } catch {
+        setLoadingLocation(false);
+      }
+    })();
+    // Load recents
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('@smartRoute.recents');
+        if (raw) setRecents(JSON.parse(raw));
+      } catch {}
+    })();
+    // Load last sheet state (expanded/collapsed)
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@smartRoute.sheetExpanded');
+        const expanded = saved === '1';
+        setIsExpanded(expanded);
+        sheetOffset.setValue(expanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
+      } catch {}
+    })();
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
 
-  const selectRoute = (route) => {
-    setActiveRoute(route.id);
-    Alert.alert('Route Selected', `Starting ${route.name}\nEstimated time: ${route.time}`);
+  const line = useMemo(() => {
+    if (!origin || !destination) return [];
+    return [origin, destination]; // Straight-line fallback when Directions API not available
+  }, [origin, destination]);
+
+  const distanceKm = useMemo(() => {
+    if (origin && destination) return haversineKm(origin, destination);
+    return null;
+  }, [origin, destination]);
+
+  const estMinutesFallback = useMemo(() => {
+    if (!distanceKm) return null;
+    // Walking ~5 km/h -> 12 min/km; Driving ~30 km/h -> 2 min/km
+    const perKm = mode === 'walking' ? 12 : 2;
+    const minutes = Math.round(distanceKm * perKm);
+    return Math.max(1, minutes);
+  }, [distanceKm, mode]);
+
+  const openExternalMap = () => {
+    if (!destination) {
+      Alert.alert('Pick destination', 'Long-press on the map to set where you want to go.');
+      return;
+    }
+    const { latitude, longitude } = destination;
+    const latLng = `${latitude},${longitude}`;
+    const travelmode = mode === 'walking' ? 'walking' : 'driving';
+    const appleDirFlg = mode === 'walking' ? 'w' : 'd';
+
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latLng}&travelmode=${travelmode}`;
+    const appleMapsUrl = `http://maps.apple.com/?daddr=${latLng}&q=Destination&dirflg=${appleDirFlg}`;
+    const wazeUrl = `https://waze.com/ul?ll=${latLng}&navigate=yes`;
+
+    const options = [];
+    if (Platform.OS === 'ios') {
+      options.push({ label: 'Apple Maps', url: appleMapsUrl });
+      options.push({ label: 'Google Maps', url: googleMapsUrl });
+      options.push({ label: 'Waze', url: wazeUrl });
+    } else {
+      options.push({ label: 'Google Maps', url: googleMapsUrl });
+      options.push({ label: 'Waze', url: wazeUrl });
+    }
+
+    Alert.alert(
+      'Open Navigation',
+      'Choose app to navigate with:',
+      options.map((opt) => ({
+        text: opt.label,
+        onPress: () => Linking.openURL(opt.url).catch(() => {
+          Alert.alert('Error', `${opt.label} not available on this device.`);
+        }),
+      }))
+    );
   };
 
-  const getSafetyColor = (score) => {
-    if (score >= 90) return '#00D9FF';
-    if (score >= 70) return '#FFB800';
-    return '#FF6B6B';
+  // Debounced Places Autocomplete suggestions
+  useEffect(() => {
+    if (!webKey) return; // search disabled without key
+    if (!query) {
+      setSuggestions([]);
+      setSearchError('');
+      return;
+    }
+    setSearching(true);
+    setSearchError('');
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('input', query);
+        params.set('key', webKey);
+        params.set('types', 'geocode'); // addresses/places
+        params.set('components', 'country:za');
+        params.set('sessiontoken', sessionTokenRef.current);
+        if (origin) {
+          params.set('location', `${origin.latitude},${origin.longitude}`);
+          params.set('radius', '20000'); // 20km bias
+        }
+        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data?.status === 'OK') {
+          setSuggestions(data.predictions || []);
+        } else {
+          setSuggestions([]);
+          setSearchError(data?.error_message || data?.status || 'No results');
+        }
+      } catch {
+        setSuggestions([]);
+        setSearchError('Network error while searching');
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+  }, [query, webKey, origin]);
+
+  const onSelectSuggestion = async (pred) => {
+    try {
+      setShowSuggestions(false);
+      setQuery(pred.description);
+      if (!webKey) return;
+      const params = new URLSearchParams();
+      params.set('place_id', pred.place_id);
+      params.set('fields', 'geometry,name');
+      params.set('key', webKey);
+      params.set('sessiontoken', sessionTokenRef.current);
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const loc = data?.result?.geometry?.location;
+      if (loc) {
+        const coords = { latitude: loc.lat, longitude: loc.lng };
+        setDestination(coords);
+        await saveRecent({
+          id: pred.place_id,
+          name: data?.result?.name || pred.description,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+        // rotate token after a successful selection
+        sessionTokenRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+    } catch {}
   };
+
+  const saveRecent = async (item) => {
+    try {
+      const next = [item, ...recents.filter((r) => r.id !== item.id)].slice(0, 8);
+      setRecents(next);
+      await AsyncStorage.setItem('@smartRoute.recents', JSON.stringify(next));
+    } catch {}
+  };
+
+  const useRecent = async (r) => {
+    setDestination({ latitude: r.latitude, longitude: r.longitude });
+    setQuery(r.name);
+    await saveRecent(r);
+  };
+
+  // Directions API: build polyline and ETA when web key present
+  useEffect(() => {
+    const fetchDirections = async () => {
+      if (!webKey || !origin || !destination) {
+        setRouteCoords([]);
+        setRouteInfo(null);
+        return;
+      }
+      try {
+        const params = new URLSearchParams();
+        params.set('origin', `${origin.latitude},${origin.longitude}`);
+        params.set('destination', `${destination.latitude},${destination.longitude}`);
+        params.set('mode', mode);
+        params.set('region', 'za');
+        params.set('key', webKey);
+        const url = `https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const route = data?.routes?.[0];
+        if (route?.overview_polyline?.points) {
+          const coords = decodePolyline(route.overview_polyline.points);
+          setRouteCoords(coords);
+          const leg = route?.legs?.[0];
+          setRouteInfo({
+            distanceText: leg?.distance?.text || null,
+            durationText: leg?.duration?.text || null,
+          });
+        } else {
+          setRouteCoords([]);
+          setRouteInfo(null);
+        }
+      } catch {
+        setRouteCoords([]);
+        setRouteInfo(null);
+      }
+    };
+    fetchDirections();
+  }, [origin, destination, webKey, mode]);
+
+  const fitMap = () => {
+    if (!mapRef.current) return;
+    const points = (routeCoords?.length >= 2 ? routeCoords : [origin, destination]).filter(Boolean);
+    if (points.length >= 2) {
+      mapRef.current.fitToCoordinates(points, {
+        edgePadding: { top: 80, bottom: COLLAPSED_OFFSET + 40, left: 40, right: 40 },
+        animated: true,
+      });
+    }
+  };
+
+  useEffect(() => {
+    fitMap();
+  }, [destination, routeCoords]);
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F4F7FA" />
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        initialRegion={region}
+        onRegionChangeComplete={setRegion}
+        showsUserLocation
+        showsMyLocationButton
+        onLongPress={(e) => setDestination(e.nativeEvent.coordinate)}
+      >
+        {origin && (
+          <Marker coordinate={origin} title="Start" pinColor="#007AFF" />
+        )}
+        {destination && (
+          <Marker coordinate={destination} title="Destination" />
+        )}
+        {(routeCoords.length >= 2 ? routeCoords : line).length >= 2 && (
+          <Polyline
+            coordinates={routeCoords.length >= 2 ? routeCoords : line}
+            strokeColor="#007AFF"
+            strokeWidth={4}
+          />
+        )}
+      </MapView>
+
+      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <MaterialIcons name="route" size={24} color="#00D9FF" />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Smart Route</Text>
-            <Text style={styles.headerSubtitle}>Safe navigation planning</Text>
-          </View>
-        </View>
+        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={24} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Smart Route</Text>
+        <View style={styles.headerButtonSpacer} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Current Location Info */}
-        <View style={styles.currentLocationCard}>
-          <View style={styles.locationHeader}>
-            <MaterialIcons name="my-location" size={20} color="#00D9FF" />
-            <Text style={styles.locationTitle}>Current Location</Text>
-          </View>
-          <Text style={styles.locationAddress}>123 Main Street, Downtown District</Text>
-          <View style={styles.safetyStatus}>
-            <View style={styles.safetyIndicator} />
-            <Text style={styles.safetyText}>Area Safety: HIGH</Text>
-          </View>
+      {/* Bottom sheet */}
+      <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetOffset }] }]}>
+        <View style={styles.sheetHandle} {...panResponder.panHandlers} />
+        {/* Search row */}
+        <View style={styles.searchRow}>
+          <MaterialIcons name="place" size={20} color="#007AFF" />
+          <TextInput
+            value={query}
+            onChangeText={(t) => {
+              setQuery(t);
+              setShowSuggestions(true);
+            }}
+            placeholder={webKey ? 'Search destination' : 'Long-press map to set destination'}
+            placeholderTextColor="#9CA3AF"
+            style={styles.searchInput}
+            onFocus={() => setShowSuggestions(true)}
+          />
+          {query?.length > 0 && (
+            <TouchableOpacity onPress={() => { setQuery(''); setSuggestions([]); }}>
+              <MaterialIcons name="cancel" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Quick Destinations */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Destinations</Text>
-          <View style={styles.destinationsGrid}>
-            {savedLocations.map((location) => (
-              <TouchableOpacity
-                key={location.id}
-                style={styles.destinationCard}
-                onPress={() => Alert.alert('Navigate', `Starting route to ${location.name}`)}
-              >
-                <Text style={styles.destinationIcon}>{location.icon}</Text>
-                <Text style={styles.destinationName}>{location.name}</Text>
-                <Text style={styles.destinationDistance}>{location.distance}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Route Options */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Routes</Text>
-          
-          {routes.map((route) => (
-            <TouchableOpacity
-              key={route.id}
-              style={[
-                styles.routeCard,
-                activeRoute === route.id && styles.routeCardActive,
-              ]}
-              onPress={() => selectRoute(route)}
-            >
-              {route.type === 'recommended' && (
-                <View style={styles.recommendedBadge}>
-                  <MaterialIcons name="verified" size={14} color="#00D9FF" />
-                  <Text style={styles.recommendedText}>Recommended</Text>
-                </View>
-              )}
-
-              <View style={styles.routeHeader}>
-                <View>
-                  <Text style={styles.routeName}>{route.name}</Text>
-                  <Text style={styles.routeDescription}>{route.description}</Text>
-                </View>
-                <View style={styles.routeMeta}>
-                  <View style={styles.metaItem}>
-                    <MaterialIcons name="schedule" size={16} color="#A0AFBB" />
-                    <Text style={styles.metaText}>{route.time}</Text>
-                  </View>
-                  <View style={styles.metaItem}>
-                    <MaterialIcons name="straighten" size={16} color="#A0AFBB" />
-                    <Text style={styles.metaText}>{route.distance}</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.routeFooter}>
-                <View style={styles.safetyScore}>
-                  <View
-                    style={[
-                      styles.scoreCircle,
-                      { borderColor: getSafetyColor(route.safetyScore) },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.scoreText,
-                        { color: getSafetyColor(route.safetyScore) },
-                      ]}
-                    >
-                      {route.safetyScore}%
-                    </Text>
-                  </View>
-                  <View style={styles.scoreInfo}>
-                    <Text style={styles.scoreLabel}>Safety Score</Text>
-                    <Text style={styles.scoreIncidents}>
-                      {route.incidents} incident{route.incidents !== 1 ? 's' : ''} reported
-                    </Text>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.startButton}
-                  onPress={() => selectRoute(route)}
-                >
-                  <MaterialIcons name="arrow-forward" size={18} color="#000000" />
+        {/* Suggestions / Recents panel */}
+        {showSuggestions && (
+          <View style={styles.suggestionsPanel}>
+            {!!searchError && (
+              <View style={styles.suggestionErrorRow}>
+                <MaterialIcons name="error-outline" size={16} color="#EF4444" />
+                <Text style={styles.suggestionErrorText} numberOfLines={2}>{searchError}</Text>
+                <TouchableOpacity style={styles.retryBtn} onPress={() => {
+                  if (webKey && query) {
+                    setSearching(true);
+                    setSearchError('');
+                    // immediate retry with current query
+                    (async () => {
+                      try {
+                        const params = new URLSearchParams();
+                        params.set('input', query);
+                        params.set('key', webKey);
+                        params.set('types', 'geocode');
+                        params.set('components', 'country:za');
+                        params.set('sessiontoken', sessionTokenRef.current);
+                        if (origin) {
+                          params.set('location', `${origin.latitude},${origin.longitude}`);
+                          params.set('radius', '20000');
+                        }
+                        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (data?.status === 'OK') {
+                          setSuggestions(data.predictions || []);
+                        } else {
+                          setSuggestions([]);
+                          setSearchError(data?.error_message || data?.status || 'No results');
+                        }
+                      } catch {
+                        setSuggestions([]);
+                        setSearchError('Network error while searching');
+                      } finally {
+                        setSearching(false);
+                      }
+                    })();
+                  }
+                }}>
+                  <MaterialIcons name="refresh" size={16} color="#1F2937" />
                 </TouchableOpacity>
               </View>
-            </TouchableOpacity>
-          ))}
+            )}
+            {webKey ? (
+              suggestions.length > 0 ? (
+                suggestions.map((p) => (
+                  <TouchableOpacity key={p.place_id} style={styles.suggestionItem} onPress={() => onSelectSuggestion(p)}>
+                    <MaterialIcons name="location-on" size={18} color="#007AFF" />
+                    <Text style={styles.suggestionText} numberOfLines={1}>{p.description}</Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.suggestionEmptyRow}>
+                  {searching ? (
+                    <ActivityIndicator color="#007AFF" />
+                  ) : (
+                    <Text style={styles.suggestionEmptyText}>Start typing to search places</Text>
+                  )}
+                </View>
+              )
+            ) : (
+              <Text style={styles.keyHint}>Add a Google Places web key to enable search.</Text>
+            )}
+            {recents.length > 0 && (
+              <View style={styles.recentsBlock}>
+                <Text style={styles.recentsTitle}>Recent</Text>
+                {recents.map((r) => (
+                  <TouchableOpacity key={r.id} style={styles.suggestionItem} onPress={() => useRecent(r)}>
+                    <MaterialIcons name="history" size={18} color="#6B7280" />
+                    <Text style={styles.suggestionText} numberOfLines={1}>{r.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {/* Powered by Google footer */}
+            <View style={styles.poweredRow}>
+              <Text style={styles.poweredText}>Powered by Google</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Mode toggle */}
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'walking' && styles.modeButtonActive]}
+            onPress={() => setMode('walking')}
+          >
+            <MaterialIcons name="directions-walk" size={16} color={mode === 'walking' ? '#FFFFFF' : '#374151'} />
+            <Text style={[styles.modeText, mode === 'walking' && styles.modeTextActive]}>Walk</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeButton, mode === 'driving' && styles.modeButtonActive]}
+            onPress={() => setMode('driving')}
+          >
+            <MaterialIcons name="directions-car" size={16} color={mode === 'driving' ? '#FFFFFF' : '#374151'} />
+            <Text style={[styles.modeText, mode === 'driving' && styles.modeTextActive]}>Drive</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Safety Tips */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Navigation Safety Tips</Text>
-          
-          <View style={styles.tipCard}>
-            <MaterialIcons name="lightbulb" size={20} color="#FFB800" />
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Stay Alert</Text>
-              <Text style={styles.tipText}>Keep your phone visible but secure. Share your location with trusted contacts.</Text>
-            </View>
+        <View style={styles.metricsRow}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>Distance</Text>
+            <Text style={styles.metricValue}>
+              {routeInfo?.distanceText || (distanceKm ? `${distanceKm.toFixed(2)} km` : '--')}
+            </Text>
           </View>
-
-          <View style={styles.tipCard}>
-            <MaterialIcons name="phone" size={20} color="#FFB800" />
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Emergency Access</Text>
-              <Text style={styles.tipText}>Your emergency contacts are just one tap away during navigation.</Text>
-            </View>
-          </View>
-
-          <View style={styles.tipCard}>
-            <MaterialIcons name="visibility" size={20} color="#FFB800" />
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Visibility</Text>
-              <Text style={styles.tipText}>Routes prioritize well-lit areas and main streets when possible.</Text>
-            </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>ETA ({mode === 'walking' ? 'walk' : 'drive'})</Text>
+            <Text style={styles.metricValue}>{routeInfo?.durationText || (estMinutesFallback ? `${estMinutesFallback} min` : '--')}</Text>
           </View>
         </View>
 
-        <View style={styles.spacer} />
-      </ScrollView>
+        <View style={styles.noteBox}>
+          <Text style={styles.noteText}>
+            Preview only. For turn-by-turn directions, we open your maps app.
+          </Text>
+        </View>
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.navigateBtn, !destination && styles.btnDisabled]}
+            onPress={openExternalMap}
+            disabled={!destination}
+          >
+            <Entypo name="direction" size={18} color="#FFFFFF" />
+            <Text style={styles.navigateText}>Navigate</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.locateBtn}
+            onPress={async () => {
+              try {
+                setLoadingLocation(true);
+                const pos = await Location.getCurrentPositionAsync({});
+                const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+                setOrigin(coords);
+                // Focus the map on the user's current location with a closer zoom
+                const nextRegion = {
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                };
+                setRegion(nextRegion);
+                if (mapRef.current && typeof mapRef.current.animateToRegion === 'function') {
+                  mapRef.current.animateToRegion(nextRegion, 500);
+                }
+                setLoadingLocation(false);
+              } catch {
+                setLoadingLocation(false);
+                Alert.alert('Location error', 'Unable to fetch your current location.');
+              }
+            }}
+          >
+            <MaterialIcons name="my-location" size={18} color="#007AFF" />
+            <Text style={styles.locateText}>{loadingLocation ? 'Locating…' : 'Use my location'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.panicContainer}>
+          <PanicButton onPress={() => Alert.alert('SOS', 'Emergency workflow coming from Home screen.')} />
+          <Text style={styles.panicHint}>Press for emergency</Text>
+        </View>
+      </Animated.View>
     </SafeAreaView>
   );
 };
 
-const RouteCard = ({ children, ...props }) => {
-  return <View {...props}>{children}</View>;
-};
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0F1419',
-  },
+  container: { flex: 1, backgroundColor: '#F4F7FA' },
+  map: { ...StyleSheet.absoluteFillObject },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(0, 217, 255, 0.05)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 217, 255, 0.1)',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerText: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#A0AFBB',
-    marginTop: 2,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  currentLocationCard: {
-    backgroundColor: 'rgba(0, 217, 255, 0.08)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.2)',
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  locationTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#00D9FF',
-  },
-  locationAddress: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 12,
-  },
-  safetyStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  safetyIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#00D9FF',
-    shadowColor: '#00D9FF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  safetyText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#00D9FF',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 12,
-  },
-  destinationsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  destinationCard: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 217, 255, 0.06)',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.15)',
-  },
-  destinationIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  destinationName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  destinationDistance: {
-    fontSize: 11,
-    color: '#A0AFBB',
-  },
-  routeCard: {
-    backgroundColor: 'rgba(0, 217, 255, 0.04)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 217, 255, 0.1)',
-  },
-  routeCardActive: {
-    backgroundColor: 'rgba(0, 217, 255, 0.12)',
-    borderColor: 'rgba(0, 217, 255, 0.4)',
-  },
-  recommendedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 217, 255, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
-  },
-  recommendedText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#00D9FF',
-  },
-  routeHeader: {
-    marginBottom: 16,
-  },
-  routeName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  routeDescription: {
-    fontSize: 12,
-    color: '#A0AFBB',
-  },
-  routeMeta: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 8,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 12,
-    color: '#A0AFBB',
-  },
-  routeFooter: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 50,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 217, 255, 0.1)',
+    paddingHorizontal: 20,
+    zIndex: 10,
   },
-  safetyScore: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  scoreCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scoreText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  scoreInfo: {
-    flex: 1,
-  },
-  scoreLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#A0AFBB',
-  },
-  scoreIncidents: {
-    fontSize: 11,
-    color: '#FFB800',
-    marginTop: 2,
-  },
-  startButton: {
+  headerButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     width: 44,
     height: 44,
-    borderRadius: 12,
-    backgroundColor: '#00D9FF',
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  tipCard: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 184, 0, 0.08)',
-    borderRadius: 12,
-    padding: 14,
+  headerButtonSpacer: { width: 44, height: 44 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    paddingHorizontal: 20,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 184, 0, 0.15)',
-    gap: 12,
   },
-  tipContent: {
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: {
     flex: 1,
+    color: '#111827',
+    fontSize: 14,
   },
-  tipTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
+
+  suggestionsPanel: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    marginTop: 8,
+    maxHeight: 200,
+    overflow: 'hidden',
   },
-  tipText: {
-    fontSize: 12,
-    color: '#A0AFBB',
-    lineHeight: 18,
+  suggestionErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FEF2F2',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FEE2E2',
   },
-  spacer: {
-    height: 20,
+  suggestionErrorText: { color: '#B91C1C', fontSize: 12, flex: 1 },
+  retryBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
   },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  suggestionText: { flex: 1, color: '#374151', fontSize: 14 },
+  suggestionEmptyRow: { padding: 12, alignItems: 'center' },
+  suggestionEmptyText: { color: '#6B7280', fontSize: 12 },
+  keyHint: { color: '#6B7280', fontSize: 12, padding: 12 },
+  recentsBlock: { borderTopWidth: 1, borderTopColor: '#E5E7EB', marginTop: 4, paddingTop: 6 },
+  recentsTitle: { color: '#6B7280', fontSize: 12, paddingHorizontal: 12, paddingBottom: 4 },
+  poweredRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+  },
+  poweredText: { color: '#9CA3AF', fontSize: 10 },
+
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  metricBox: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    marginRight: 8,
+    borderRadius: 12,
+    padding: 12,
+  },
+  metricLabel: { color: '#6B7280', fontSize: 12 },
+  metricValue: { color: '#111827', fontSize: 16, fontWeight: '700', marginTop: 4 },
+
+  noteBox: {
+    backgroundColor: '#ECFEFF',
+    borderColor: '#67E8F9',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+  },
+  noteText: { color: '#0E7490', fontSize: 12 },
+
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  navigateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    flex: 1,
+    marginRight: 10,
+  },
+  btnDisabled: { backgroundColor: '#93C5FD' },
+  navigateText: { color: '#FFFFFF', fontWeight: '700' },
+
+  locateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  locateText: { color: '#007AFF', fontWeight: '600' },
+
+  panicContainer: { alignItems: 'center', marginTop: 14 },
+  panicHint: { fontSize: 12, color: '#6B7280', marginTop: 8 },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  modeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  modeButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  modeText: { color: '#374151', fontSize: 12, fontWeight: '600' },
+  modeTextActive: { color: '#FFFFFF' },
 });
 
 export default SmartRouteScreen;
+
+// Polyline decoder (Google Encoded Polyline Algorithm Format)
+function decodePolyline(encoded) {
+  let index = 0;
+  const len = encoded.length;
+  const path = [];
+  let lat = 0;
+  let lng = 0;
+
+  while (index < len) {
+    let b;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = (result & 1) ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = (result & 1) ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    path.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return path;
+}
