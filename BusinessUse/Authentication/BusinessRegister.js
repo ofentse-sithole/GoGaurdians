@@ -8,6 +8,7 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
+  Image,
   Alert,
   ActivityIndicator
 } from 'react-native';
@@ -253,7 +254,11 @@ export default function BusinessRegister({ navigation }) {
         {/* Logo Section */}
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoText}>B</Text>
+            <Image
+                  source={require('../../assets/images/GoGraurdianLogo-removebg-preview.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
           </View>
           <Text style={styles.companyName}>Business Profile</Text>
         </View>
@@ -650,4 +655,10 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     fontWeight: 'bold',
   },
+  logoImage: {
+  width: 28,   // adjust to match your design
+  height: 28,
+  borderRadius: 14, // optional, if you want rounded edges
+},
+
 });
