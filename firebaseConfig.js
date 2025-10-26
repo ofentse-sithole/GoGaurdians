@@ -3,13 +3,13 @@ import Constants from 'expo-constants';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
-  getReactNativePersistence,
   initializeAuth,
+  getReactNativePersistence,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database'; // Realtime DB
+import { getDatabase } from 'firebase/database';
 
-// Read secure values injected at build time via app.config.js -> extra.firebase
+// Prefer config injected by app.config.js (from .env) so dev, preview, and prod stay consistent
 const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
 const firebaseExtra = extra.firebase || {};
 
@@ -23,16 +23,20 @@ const firebaseConfig = {
   appId: firebaseExtra.appId,
 };
 
-// Basic sanity check to help during local setup
-if (!firebaseConfig.apiKey || !firebaseConfig.appId) {
+// Helpful diagnostics to catch misconfigurations
+const required = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+const missing = required.filter((k) => !firebaseConfig[k]);
+if (missing.length) {
+  const maskedKey = firebaseConfig.apiKey ? `${String(firebaseConfig.apiKey).slice(0, 6)}…` : 'undefined';
   console.warn(
-    '[firebaseConfig] Missing Firebase credentials. Check your .env and app.config.js injection.'
+    `[firebaseConfig] Missing Firebase credentials: ${missing.join(', ')}. apiKey=${maskedKey}. Check your .env and app.config.js injection.`
   );
 }
 
+// Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Only initialize auth once (important for React Native with Hermes)
+// Initialize Auth with persistence
 let auth;
 try {
   auth = initializeAuth(app, {
@@ -42,10 +46,10 @@ try {
   auth = getAuth(app); // fallback if already initialized
 }
 
-// Firestore (for personal data)
+// Firestore (for user/personal data)
 const firestore = getFirestore(app);
 
-// Realtime Database (for business data)
+// Realtime Database (for business/real-time data)
 const realtimeDB = getDatabase(app);
 
 export { auth, firestore, realtimeDB };

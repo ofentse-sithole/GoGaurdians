@@ -8,6 +8,7 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
+  Image,
   Animated,
   Alert,
   ActivityIndicator
@@ -188,7 +189,11 @@ export default function BusinessLogin({ navigation }) {
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
             <View style={styles.logoInner}>
-              <Text style={styles.logoText}>B</Text>
+              <Image
+                  source={require('../../assets/images/GoGraurdianLogo-removebg-preview.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
             </View>
           </View>
           <Text style={styles.companyName}>Business Portal</Text>
@@ -616,4 +621,10 @@ const styles = StyleSheet.create({
   sliderButtonText: {
     fontSize: 20,
   },
+  logoImage: {
+  width: 28,   // adjust to match your design
+  height: 28,
+  borderRadius: 14, // optional, if you want rounded edges
+},
+
 });
