@@ -12,18 +12,62 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow GoGaurdians to access your contacts for emergency communications."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow GoGaurdians to use your location for emergency services.",
+          "locationAlwaysPermission": "Allow GoGaurdians to use your location in the background for emergency tracking.",
+          "locationWhenInUsePermission": "Allow GoGaurdians to use your location while using the app."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GoGaurdians to access your photos for sharing emergency information.",
+          "cameraPermission": "Allow GoGaurdians to access your camera for documenting emergencies."
+        }
+      ]
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSContactsUsageDescription": "GoGaurdians needs access to contacts for emergency communications",
+        "NSLocationWhenInUseUsageDescription": "Your location is used to provide emergency services and share with trusted contacts",
+        "NSLocationAlwaysUsageDescription": "Your location is tracked for emergency response",
+        "NSCameraUsageDescription": "Camera access is needed to document emergency situations",
+        "NSPhotoLibraryUsageDescription": "Photo library access is needed to share emergency information"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "CAMERA",
+        "READ_CONTACTS",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1f9d5f0c-2f26-4e14-bc80-34c252d300af"
+      }
     }
   }
 }

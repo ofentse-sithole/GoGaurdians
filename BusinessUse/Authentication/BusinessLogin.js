@@ -8,10 +8,15 @@ import {
   ScrollView, 
   KeyboardAvoidingView, 
   Platform,
-  Animated
+  Image,
+  Animated,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
-
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { ref, get, set, serverTimestamp } from 'firebase/database';
+import { auth, realtimeDB } from '../../firebaseConfig';
 
 export default function BusinessLogin({ navigation }) {
   const [email, setEmail] = useState('');
@@ -19,22 +24,107 @@ export default function BusinessLogin({ navigation }) {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [sliderPosition] = useState(new Animated.Value(0));
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log('Business login pressed', { email, password });
-    // Add your business login logic here
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      // Sign in with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Check if user has a business account in Realtime Database
+      const businessUserRef = ref(realtimeDB, `businessUsers/${user.uid}`);
+      const businessUserSnapshot = await get(businessUserRef);
+      
+      if (!businessUserSnapshot.exists()) {
+        // User exists in auth but not as a business user
+        Alert.alert(
+          'Access Denied', 
+          'This account is not registered as a business account. Please contact support or register a new business account.',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                // Sign out the user since they don't have business access
+                await auth.signOut();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      const businessData = businessUserSnapshot.val();
+      
+      // Check if business account is active
+      if (businessData.status === 'suspended' || businessData.status === 'inactive') {
+        Alert.alert(
+          'Account Suspended', 
+          'Your business account has been suspended. Please contact support for assistance.'
+        );
+        await auth.signOut();
+        return;
+      }
+
+      // Update last login timestamp
+      await set(ref(realtimeDB, `businessUsers/${user.uid}/lastLogin`), serverTimestamp());
+      await set(ref(realtimeDB, `businessUsers/${user.uid}/loginCount`), (businessData.loginCount || 0) + 1);
+
+      console.log('Business login successful:', user.email, businessData.companyName);
+      // Do not manually navigate. The global auth listener in App.js will switch
+      // the navigator to the authenticated stack automatically.
+      
+    } catch (error) {
+      console.error('Business login error:', error);
+      
+      let errorMessage = 'An error occurred during login';
+      
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'This account has been disabled';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed login attempts. Please try again later';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'Login failed. Please try again';
+      }
+      
+      Alert.alert('Login Failed', errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleForgotPassword = () => {
-    navigation.navigate('BusinessForgotPassword');
+    navigation?.navigate('BusinessForgotPassword');
   };
 
   const handleSignUp = () => {
-    navigation.navigate('BusinessRegister');
+    navigation?.navigate('BusinessRegister');
   };
 
   const handlePersonalLogin = () => {
-    navigation.navigate('PersonalLogin');
+    navigation?.navigate('PersonalLogin');
   };
 
   const onSliderGestureEvent = Animated.event(
@@ -94,7 +184,11 @@ export default function BusinessLogin({ navigation }) {
         <View style={styles.logoContainer}>
           <View style={styles.logoPlaceholder}>
             <View style={styles.logoInner}>
-              <Text style={styles.logoText}>B</Text>
+              <Image
+                  source={require('../../assets/images/GoGraurdianLogo-removebg-preview.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
             </View>
           </View>
           <Text style={styles.companyName}>Business Portal</Text>
@@ -126,6 +220,7 @@ export default function BusinessLogin({ navigation }) {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                editable={!loading}
               />
             </View>
           </View>
@@ -137,6 +232,7 @@ export default function BusinessLogin({ navigation }) {
               <TouchableOpacity 
                 onPress={handleForgotPassword}
                 activeOpacity={0.7}
+                disabled={loading}
               >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
@@ -155,17 +251,23 @@ export default function BusinessLogin({ navigation }) {
                 onBlur={() => setPasswordFocused(false)}
                 secureTextEntry
                 autoCapitalize="none"
+                editable={!loading}
               />
             </View>
           </View>
 
           {/* Login Button */}
           <TouchableOpacity 
-            style={styles.loginButton}
+            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
             onPress={handleLogin}
             activeOpacity={0.8}
+            disabled={loading}
           >
-            <Text style={styles.loginButtonText}>Sign In</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.loginButtonText}>Sign In</Text>
+            )}
           </TouchableOpacity>
 
           {/* Divider */}
@@ -181,6 +283,7 @@ export default function BusinessLogin({ navigation }) {
             <TouchableOpacity 
               onPress={handleSignUp}
               activeOpacity={0.7}
+              disabled={loading}
             >
               <Text style={styles.signUpLink}>Create Account</Text>
             </TouchableOpacity>
@@ -204,6 +307,7 @@ export default function BusinessLogin({ navigation }) {
           <PanGestureHandler
             onGestureEvent={onSliderGestureEvent}
             onHandlerStateChange={onSliderHandlerStateChange}
+            enabled={!loading}
           >
             <Animated.View
               style={[
@@ -225,6 +329,7 @@ export default function BusinessLogin({ navigation }) {
                 style={styles.sliderButtonInner}
                 onPress={handleSliderPress}
                 activeOpacity={0.8}
+                disabled={loading}
               >
                 <Text style={styles.sliderButtonText}>👤</Text>
               </TouchableOpacity>
@@ -247,6 +352,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: -120,
     paddingBottom: 120, // Extra space for slider
+  },
+  headerAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    backgroundColor: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+    background: '#1E40AF',
   },
   personalLoginButton: {
     position: 'absolute',
@@ -395,6 +509,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  loginButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0.1,
+  },
   loginButtonText: {
     fontSize: 16,
     fontWeight: '700',
@@ -498,4 +616,10 @@ const styles = StyleSheet.create({
   sliderButtonText: {
     fontSize: 20,
   },
+  logoImage: {
+  width: 28,   // adjust to match your design
+  height: 28,
+  borderRadius: 14, // optional, if you want rounded edges
+},
+
 });
