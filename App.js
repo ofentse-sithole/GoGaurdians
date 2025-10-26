@@ -15,8 +15,9 @@ const Stack = createStackNavigator();
 
 const App = () => {
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="PersonalLogin">
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="PersonalLogin">
         <Stack.Screen name="PersonalLogin" component={PersonalLogin} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalRegister" component={PersonalRegister} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalForgotPassword" component={PersonalForgotPassword} options={{ headerShown: false }} />
