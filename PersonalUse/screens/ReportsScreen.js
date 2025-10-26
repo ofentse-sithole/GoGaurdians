@@ -11,6 +11,7 @@ import {
   Platform,
   Animated,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +26,7 @@ import {
   updateDoc,
   serverTimestamp,
   Timestamp,
+  getDocs,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, firestore } from '../../firebaseConfig'; // Adjust path as needed
@@ -36,6 +38,7 @@ const ReportsScreen = () => {
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Statistics state
   const [stats, setStats] = useState({
@@ -51,20 +54,20 @@ const ReportsScreen = () => {
     coordinates: null,
   });
 
-  // Chat-related state
-  const [chatMessages, setChatMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [selectedReportType, setSelectedReportType] = useState(null);
+  // Report form state
   const [isReporting, setIsReporting] = useState(false);
+  const [selectedReportType, setSelectedReportType] = useState(null);
   const [reportData, setReportData] = useState({
+    title: '',
     description: '',
+    category: '',
+    severity: 'medium',
     timeOfIncident: '',
     additionalInfo: '',
     needsImmediateAssistance: false,
   });
   
   const scrollViewRef = useRef();
-  const chatScrollRef = useRef();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // Initialize user authentication and location
@@ -191,16 +194,148 @@ const ReportsScreen = () => {
     }
   };
 
-  // Chat animation effect
-  useEffect(() => {
-    if (chatMessages.length > 0) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+  // Refresh reports
+  const onRefresh = async () => {
+    setRefreshing(true);
+    if (currentUser) {
+      await getCurrentLocation();
+      // The onSnapshot listener will automatically update the reports
     }
-  }, [chatMessages]);
+    setRefreshing(false);
+  };
+
+  // Start reporting process
+  const startReporting = (type) => {
+    if (!currentUser) {
+      Alert.alert('Authentication Required', 'Please log in to report incidents.');
+      return;
+    }
+
+    setSelectedReportType(type);
+    setIsReporting(true);
+    setReportData({
+      title: '',
+      description: '',
+      category: type,
+      severity: 'medium',
+      timeOfIncident: '',
+      additionalInfo: '',
+      needsImmediateAssistance: false,
+    });
+
+    // Animate form appearance
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    // Scroll to form
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  // Cancel reporting
+  const cancelReporting = () => {
+    Alert.alert(
+      'Cancel Report',
+      'Are you sure you want to cancel this report? All information will be lost.',
+      [
+        { text: 'Continue Reporting', style: 'cancel' },
+        { 
+          text: 'Cancel Report', 
+          style: 'destructive',
+          onPress: () => {
+            setIsReporting(false);
+            setSelectedReportType(null);
+            setReportData({
+              title: '',
+              description: '',
+              category: '',
+              severity: 'medium',
+              timeOfIncident: '',
+              additionalInfo: '',
+              needsImmediateAssistance: false,
+            });
+            fadeAnim.setValue(0);
+          }
+        }
+      ]
+    );
+  };
+
+  // Submit incident report
+  const submitReport = async () => {
+    if (!currentUser) {
+      Alert.alert('Error', 'You must be logged in to submit a report.');
+      return;
+    }
+
+    if (!reportData.title.trim() || !reportData.description.trim()) {
+      Alert.alert('Error', 'Please fill in at least the title and description.');
+      return;
+    }
+
+    setSubmittingReport(true);
+
+    try {
+      // Generate a unique report ID
+      const reportId = `RPT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      const reportDoc = {
+        reportId,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+        title: reportData.title,
+        description: reportData.description,
+        category: reportData.category,
+        severity: reportData.severity,
+        timeOfIncident: reportData.timeOfIncident,
+        additionalInfo: reportData.additionalInfo,
+        needsImmediateAssistance: reportData.needsImmediateAssistance,
+        location: {
+          address: currentLocation.address,
+          coordinates: currentLocation.coordinates,
+        },
+        status: 'Reported',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(firestore, 'reports'), reportDoc);
+
+      Alert.alert(
+        'Report Submitted',
+        `Your report has been submitted successfully. Report ID: ${reportId}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setIsReporting(false);
+              setSelectedReportType(null);
+              setReportData({
+                title: '',
+                description: '',
+                category: '',
+                severity: 'medium',
+                timeOfIncident: '',
+                additionalInfo: '',
+                needsImmediateAssistance: false,
+              });
+              fadeAnim.setValue(0);
+            }
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      Alert.alert('Error', 'Failed to submit report. Please try again.');
+    }
+
+    setSubmittingReport(false);
+  };
 
   // Utility functions
   const getSeverityColor = (severity) => {
@@ -229,6 +364,21 @@ const ReportsScreen = () => {
     }
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Reported':
+        return { bg: 'rgba(255, 184, 0, 0.15)', text: '#FFB800' };
+      case 'Under Investigation':
+        return { bg: 'rgba(0, 217, 255, 0.15)', text: '#00D9FF' };
+      case 'Resolved':
+        return { bg: 'rgba(76, 175, 80, 0.15)', text: '#4CAF50' };
+      case 'Closed':
+        return { bg: 'rgba(158, 158, 158, 0.15)', text: '#9E9E9E' };
+      default:
+        return { bg: 'rgba(160, 175, 187, 0.15)', text: '#A0AFBB' };
+    }
+  };
+
   const formatDate = (date) => {
     const now = new Date();
     const diffTime = Math.abs(now - date);
@@ -245,214 +395,17 @@ const ReportsScreen = () => {
     }
   };
 
-  // Chat and reporting functions
-  const startReporting = (type) => {
-    if (!currentUser) {
-      Alert.alert('Authentication Required', 'Please log in to report incidents.');
-      return;
-    }
-
-    setSelectedReportType(type);
-    setIsReporting(true);
-    const welcomeMessage = {
-      id: Date.now(),
-      text: `You're reporting a ${type}. Please describe what happened at your current location: ${currentLocation.address}`,
-      isBot: true,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    setChatMessages([welcomeMessage]);
-    
-    // Scroll to bottom to show chat
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+  const formatReportId = (id) => {
+    return id.length > 12 ? `${id.substring(0, 12)}...` : id;
   };
 
-  const sendMessage = () => {
-    if (!inputText.trim()) return;
-
-    const userMessage = {
-      id: Date.now(),
-      text: inputText,
-      isBot: false,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setChatMessages(prev => [...prev, userMessage]);
-    
-    // Store user responses in report data
-    if (chatMessages.length === 1) {
-      setReportData(prev => ({ ...prev, description: inputText }));
-    } else if (chatMessages.length === 3) {
-      setReportData(prev => ({ ...prev, timeOfIncident: inputText }));
-    } else if (chatMessages.length === 5) {
-      setReportData(prev => ({ 
-        ...prev, 
-        needsImmediateAssistance: inputText.toLowerCase().includes('immediate') || inputText.toLowerCase().includes('urgent'),
-        additionalInfo: prev.additionalInfo + ' ' + inputText
-      }));
-    } else {
-      setReportData(prev => ({ 
-        ...prev, 
-        additionalInfo: prev.additionalInfo + ' ' + inputText
-      }));
-    }
-    
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponse = {
-        id: Date.now() + 1,
-        text: generateBotResponse(inputText, chatMessages.length),
-        isBot: true,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setChatMessages(prev => [...prev, botResponse]);
-      
-      // Auto scroll to bottom
-      setTimeout(() => {
-        chatScrollRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }, 1000);
-
-    setInputText('');
-    
-    // Auto scroll to bottom
-    setTimeout(() => {
-      chatScrollRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
-
-  const generateBotResponse = (userInput, messageCount) => {
-    if (messageCount === 1) {
-      return "Thank you for providing details. Can you tell me when this incident occurred and if anyone else was involved?";
-    } else if (messageCount === 3) {
-      return "I understand. Do you need immediate assistance, or is this for documentation purposes?";
-    } else if (messageCount === 5) {
-      return "I've gathered the essential information. Is there anything else you'd like to add about this incident?";
-    } else if (messageCount === 7) {
-      return "Thank you for the additional details. Your report is ready to be submitted. Please review and submit when ready.";
-    } else {
-      return "I've noted that information. Please continue with any additional details.";
-    }
-  };
-
-  const submitReport = async () => {
-    if (!currentUser) {
-      Alert.alert('Error', 'You must be logged in to submit a report.');
-      return;
-    }
-
-    if (chatMessages.length < 2) {
-      Alert.alert('Incomplete Report', 'Please provide more details about the incident.');
-      return;
-    }
-
-    setSubmittingReport(true);
-
-    try {
-      // Determine severity based on report type and content
-      const severity = selectedReportType === 'Crime Alert' ? 'high' : 
-                     reportData.needsImmediateAssistance ? 'medium' : 'low';
-
-      // Create report document
-      const reportDoc = {
-        userId: currentUser.uid,
-        userEmail: currentUser.email,
-        type: selectedReportType,
-        severity: severity,
-        status: 'Reported',
-        description: reportData.description,
-        timeOfIncident: reportData.timeOfIncident,
-        additionalInfo: reportData.additionalInfo,
-        needsImmediateAssistance: reportData.needsImmediateAssistance,
-        location: {
-          address: currentLocation.address,
-          coordinates: currentLocation.coordinates,
-        },
-        chatHistory: chatMessages,
-        responders: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      // Add report to Firestore
-      const docRef = await addDoc(collection(firestore, 'reports'), reportDoc);
-      
-      Alert.alert(
-        'Report Submitted',
-        `Your ${selectedReportType.toLowerCase()} has been successfully submitted with ID: ${docRef.id.substring(0, 8).toUpperCase()}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              resetReportingState();
-            },
-          },
-        ]
-      );
-
-    } catch (error) {
-      console.error('Error submitting report:', error);
-      Alert.alert(
-        'Submission Failed',
-        'There was an error submitting your report. Please try again.',
-        [
-          { text: 'Retry', onPress: submitReport },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-    } finally {
-      setSubmittingReport(false);
-    }
-  };
-
-  const resetReportingState = () => {
-    setIsReporting(false);
-    setSelectedReportType(null);
-    setChatMessages([]);
-    setInputText('');
-    setReportData({
-      description: '',
-      timeOfIncident: '',
-      additionalInfo: '',
-      needsImmediateAssistance: false,
-    });
-  };
-
-  const cancelReport = () => {
-    Alert.alert(
-      'Cancel Report',
-      'Are you sure you want to cancel this report?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes',
-          onPress: resetReportingState,
-        },
-      ]
-    );
-  };
-
-  // Show loading state
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00D9FF" />
-          <Text style={styles.loadingText}>Loading your reports...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Show login required state
   if (!currentUser) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loginRequiredContainer}>
-          <MaterialIcons name="account-circle" size={64} color="#A0AFBB" />
-          <Text style={styles.loginRequiredTitle}>Login Required</Text>
-          <Text style={styles.loginRequiredText}>
+        <View style={styles.authPrompt}>
+          <MaterialIcons name="account-circle" size={80} color="#A0AFBB" />
+          <Text style={styles.authPromptTitle}>Authentication Required</Text>
+          <Text style={styles.authPromptText}>
             Please log in to view and submit incident reports.
           </Text>
         </View>
@@ -462,330 +415,333 @@ const ReportsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <MaterialIcons name="assessment" size={24} color="#00D9FF" />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Your Reports</Text>
-            <Text style={styles.headerSubtitle}>Safety incidents you've reported</Text>
-          </View>
-        </View>
-      </View>
-
       <KeyboardAvoidingView 
-        style={styles.keyboardContainer}
+        style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
-          style={styles.content} 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Incident Reports</Text>
+              <Text style={styles.headerSubtitle}>
+                Report and track incidents in your area
+              </Text>
+            </View>
+          </View>
+
           {/* Statistics */}
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <View style={styles.statIconBox}>
-                <MaterialIcons name="summarize" size={24} color="#00D9FF" />
+                <MaterialIcons name="assignment" size={20} color="#00D9FF" />
               </View>
               <Text style={styles.statValue}>{stats.total}</Text>
               <Text style={styles.statLabel}>Total Reports</Text>
             </View>
-
             <View style={styles.statItem}>
               <View style={styles.statIconBox}>
-                <MaterialIcons name="calendar-today" size={24} color="#00D9FF" />
+                <MaterialIcons name="today" size={20} color="#00D9FF" />
               </View>
               <Text style={styles.statValue}>{stats.thisMonth}</Text>
               <Text style={styles.statLabel}>This Month</Text>
             </View>
-
             <View style={styles.statItem}>
               <View style={styles.statIconBox}>
-                <MaterialIcons name="trending-up" size={24} color="#00D9FF" />
-              </View>
-              <Text style={styles.statValue}>{stats.resolved}</Text>
-              <Text style={styles.statLabel}>Resolved</Text>
-            </View>
-
-            <View style={styles.statItem}>
-              <View style={styles.statIconBox}>
-                <MaterialIcons name="update" size={24} color="#FFB800" />
+                <MaterialIcons name="pending" size={20} color="#00D9FF" />
               </View>
               <Text style={styles.statValue}>{stats.active}</Text>
               <Text style={styles.statLabel}>Active</Text>
             </View>
+            <View style={styles.statItem}>
+              <View style={styles.statIconBox}>
+                <MaterialIcons name="check-circle" size={20} color="#00D9FF" />
+              </View>
+              <Text style={styles.statValue}>{stats.resolved}</Text>
+              <Text style={styles.statLabel}>Resolved</Text>
+            </View>
           </View>
 
-          {/* Location Info */}
+          {/* Location Card */}
           <View style={styles.locationCard}>
-            <MaterialIcons name="location-on" size={20} color="#00D9FF" />
+            <MaterialIcons name="location-on" size={24} color="#00D9FF" />
             <View style={styles.locationInfo}>
               <Text style={styles.locationTitle}>Current Location</Text>
               <Text style={styles.locationText}>{currentLocation.address}</Text>
             </View>
-            <TouchableOpacity onPress={getCurrentLocation} style={styles.refreshButton}>
-              <MaterialIcons name="refresh" size={18} color="#00D9FF" />
+            <TouchableOpacity style={styles.refreshButton} onPress={getCurrentLocation}>
+              <MaterialIcons name="refresh" size={20} color="#00D9FF" />
             </TouchableOpacity>
           </View>
 
-          {/* Report Type Selection (when not reporting) */}
+          {/* Report Type Buttons */}
           {!isReporting && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Report New Incident</Text>
+              <Text style={styles.sectionTitle}>Report an Incident</Text>
               <View style={styles.reportTypeContainer}>
                 <TouchableOpacity
                   style={[styles.reportTypeButton, styles.crimeButton]}
-                  onPress={() => startReporting('Crime Alert')}
+                  onPress={() => startReporting('Crime')}
                 >
-                  <MaterialIcons name="security" size={24} color="#FF6B6B" />
-                  <Text style={styles.reportTypeText}>Crime Alert</Text>
-                  <Text style={styles.reportTypeSubtext}>Report criminal activity</Text>
+                  <MaterialIcons name="security" size={32} color="#FF6B6B" />
+                  <Text style={[styles.reportTypeText, { color: '#FF6B6B' }]}>
+                    Crime
+                  </Text>
+                  <Text style={styles.reportTypeSubtext}>
+                    Theft, assault, vandalism
+                  </Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.reportTypeButton, styles.communityButton]}
-                  onPress={() => startReporting('Community Report')}
+                  onPress={() => startReporting('Community Issue')}
                 >
-                  <MaterialIcons name="group" size={24} color="#FFB800" />
-                  <Text style={styles.reportTypeText}>Community Report</Text>
-                  <Text style={styles.reportTypeSubtext}>Report community issues</Text>
+                  <MaterialIcons name="groups" size={32} color="#FFB800" />
+                  <Text style={[styles.reportTypeText, { color: '#FFB800' }]}>
+                    Community
+                  </Text>
+                  <Text style={styles.reportTypeSubtext}>
+                    Infrastructure, noise
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* Active Incidents Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Reports</Text>
+          {/* Report Form */}
+          {isReporting && (
+            <Animated.View style={[styles.reportForm, { opacity: fadeAnim }]}>
+              <View style={styles.formHeader}>
+                <Text style={styles.formTitle}>
+                  Report {selectedReportType}
+                </Text>
+                <TouchableOpacity onPress={cancelReporting}>
+                  <MaterialIcons name="close" size={24} color="#A0AFBB" />
+                </TouchableOpacity>
+              </View>
 
-            {incidents.map((incident) => (
-              <TouchableOpacity
-                key={incident.id}
-                style={styles.incidentCard}
-                onPress={() =>
-                  Alert.alert(
-                    `${incident.type} - ${incident.status}`,
-                    `Location: ${incident.location}\nDescription: ${incident.description}\nResponders: ${incident.responders}`
-                  )
-                }
-              >
-                {/* Severity Indicator */}
-                <View
-                  style={[
-                    styles.severityIndicator,
-                    { backgroundColor: getSeverityColor(incident.severity) },
-                  ]}
-                />
+              <View style={styles.formContent}>
+                {/* Title */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Report Title *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Brief title for the incident"
+                    placeholderTextColor="#A0AFBB"
+                    value={reportData.title}
+                    onChangeText={(text) => setReportData(prev => ({ ...prev, title: text }))}
+                  />
+                </View>
 
-                {/* Main Content */}
-                <View style={styles.incidentContent}>
-                  <View style={styles.incidentHeader}>
-                    <View style={styles.incidentTypeContainer}>
-                      <MaterialIcons
-                        name={getSeverityIcon(incident.severity)}
-                        size={16}
-                        color={getSeverityColor(incident.severity)}
-                      />
-                      <Text
+                {/* Description */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Description *</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Describe what happened in detail"
+                    placeholderTextColor="#A0AFBB"
+                    multiline
+                    numberOfLines={4}
+                    value={reportData.description}
+                    onChangeText={(text) => setReportData(prev => ({ ...prev, description: text }))}
+                  />
+                </View>
+
+                {/* Severity */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Severity Level</Text>
+                  <View style={styles.severityContainer}>
+                    {['low', 'medium', 'high'].map((level) => (
+                      <TouchableOpacity
+                        key={level}
                         style={[
-                          styles.incidentType,
-                          { color: getSeverityColor(incident.severity) },
+                          styles.severityButton,
+                          reportData.severity === level && styles.severityButtonActive,
+                          { borderColor: getSeverityColor(level) }
                         ]}
+                        onPress={() => setReportData(prev => ({ ...prev, severity: level }))}
                       >
-                        {incident.type}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor:
-                            incident.status === 'Resolved'
-                              ? 'rgba(0, 217, 255, 0.15)'
-                              : incident.status === 'Responded'
-                              ? 'rgba(255, 184, 0, 0.15)'
-                              : 'rgba(255, 107, 107, 0.15)',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          {
-                            color:
-                              incident.status === 'Resolved'
-                                ? '#00D9FF'
-                                : incident.status === 'Responded'
-                                ? '#FFB800'
-                                : '#FF6B6B',
-                          },
-                        ]}
-                      >
-                        {incident.status}
-                      </Text>
-                    </View>
+                        <MaterialIcons 
+                          name={getSeverityIcon(level)} 
+                          size={20} 
+                          color={reportData.severity === level ? getSeverityColor(level) : '#A0AFBB'} 
+                        />
+                        <Text style={[
+                          styles.severityText,
+                          reportData.severity === level && { color: getSeverityColor(level) }
+                        ]}>
+                          {level.charAt(0).toUpperCase() + level.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-
-                  <Text style={styles.incidentDescription}>{incident.description}</Text>
-
-                  <View style={styles.incidentMeta}>
-                    <View style={styles.metaItem}>
-                      <MaterialIcons name="location-on" size={14} color="#A0AFBB" />
-                      <Text style={styles.metaText}>{incident.location}</Text>
-                    </View>
-                    <View style={styles.metaItem}>
-                      <MaterialIcons name="schedule" size={14} color="#A0AFBB" />
-                      <Text style={styles.metaText}>{incident.date}</Text>
-                    </View>
-                  </View>
-
-                  {incident.responders > 0 && (
-                    <View style={styles.respondersInfo}>
-                      <MaterialIcons name="groups" size={14} color="#00D9FF" />
-                      <Text style={styles.respondersText}>
-                        {incident.responders} responder{incident.responders !== 1 ? 's' : ''} assigned
-                      </Text>
-                    </View>
-                  )}
                 </View>
 
-                {/* Arrow */}
-                <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Report Summary */}
-          {!isReporting && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Your Safety Profile</Text>
-
-              <View style={styles.profileCard}>
-                <View style={styles.profileMetric}>
-                  <Text style={styles.profileLabel}>Response Rate</Text>
-                  <Text style={styles.profileValue}>98%</Text>
+                {/* Time of Incident */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Time of Incident</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="When did this happen? (e.g., 2 hours ago, this morning)"
+                    placeholderTextColor="#A0AFBB"
+                    value={reportData.timeOfIncident}
+                    onChangeText={(text) => setReportData(prev => ({ ...prev, timeOfIncident: text }))}
+                  />
                 </View>
-                <View style={styles.divider} />
-                <View style={styles.profileMetric}>
-                  <Text style={styles.profileLabel}>Avg Response Time</Text>
-                  <Text style={styles.profileValue}>4 min</Text>
+
+                {/* Additional Info */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Additional Information</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea]}
+                    placeholder="Any additional details, witnesses, or relevant information"
+                    placeholderTextColor="#A0AFBB"
+                    multiline
+                    numberOfLines={3}
+                    value={reportData.additionalInfo}
+                    onChangeText={(text) => setReportData(prev => ({ ...prev, additionalInfo: text }))}
+                  />
                 </View>
-              </View>
 
-              <View style={styles.infoBox}>
-                <AntDesign name="infocirlce" size={20} color="#00D9FF" />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoTitle}>Report Details</Text>
-                  <Text style={styles.infoText}>
-                    All reports are confidential and encrypted. Your data helps improve community safety.
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Export Section */}
-          {!isReporting && (
-            <View style={styles.section}>
-              <TouchableOpacity style={styles.exportButton}>
-                <MaterialIcons name="download" size={20} color="#000000" />
-                <Text style={styles.exportButtonText}>Export Report History</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.spacer} />
-        </ScrollView>
-
-        {/* Chat Interface */}
-        {isReporting && (
-          <Animated.View style={[styles.chatContainer, { opacity: fadeAnim }]}>
-            {/* Chat Header */}
-            <View style={styles.chatHeader}>
-              <View style={styles.chatHeaderLeft}>
-                <MaterialIcons 
-                  name={selectedReportType === 'Crime Alert' ? 'security' : 'group'} 
-                  size={20} 
-                  color={selectedReportType === 'Crime Alert' ? '#FF6B6B' : '#FFB800'} 
-                />
-                <Text style={styles.chatHeaderTitle}>Reporting {selectedReportType}</Text>
-              </View>
-              <TouchableOpacity onPress={cancelReport} style={styles.cancelButton}>
-                <MaterialIcons name="close" size={20} color="#A0AFBB" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Chat Messages */}
-            <ScrollView 
-              ref={chatScrollRef}
-              style={styles.chatMessages}
-              showsVerticalScrollIndicator={false}
-            >
-              {chatMessages.map((message) => (
-                <View key={message.id} style={[
-                  styles.messageContainer,
-                  message.isBot ? styles.botMessage : styles.userMessage
-                ]}>
-                  <Text style={[
-                    styles.messageText,
-                    message.isBot ? styles.botMessageText : styles.userMessageText
-                  ]}>
-                    {message.text}
-                  </Text>
-                  <Text style={[
-                    styles.messageTimestamp,
-                    message.isBot ? styles.botTimestamp : styles.userTimestamp
-                  ]}>
-                    {message.timestamp}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Chat Input */}
-            <View style={styles.chatInputContainer}>
-              <View style={styles.chatInputWrapper}>
-                <TextInput
-                  style={styles.chatInput}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  placeholder="Describe the incident..."
-                  placeholderTextColor="#A0AFBB"
-                  multiline
-                  maxLength={500}
-                />
-                <TouchableOpacity 
-                  style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
-                  onPress={sendMessage}
-                  disabled={!inputText.trim()}
+                {/* Immediate Assistance */}
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => setReportData(prev => ({ 
+                    ...prev, 
+                    needsImmediateAssistance: !prev.needsImmediateAssistance 
+                  }))}
                 >
                   <MaterialIcons 
-                    name="send" 
-                    size={20} 
-                    color={inputText.trim() ? "#000000" : "#A0AFBB"} 
+                    name={reportData.needsImmediateAssistance ? "check-box" : "check-box-outline-blank"} 
+                    size={24} 
+                    color={reportData.needsImmediateAssistance ? "#00D9FF" : "#A0AFBB"} 
                   />
+                  <Text style={styles.checkboxText}>
+                    This incident requires immediate assistance
+                  </Text>
                 </TouchableOpacity>
-              </View>
-              
-              {chatMessages.length >= 4 && (
-                <TouchableOpacity 
-                  style={[styles.submitButton, submittingReport && styles.submitButtonDisabled]} 
+
+                {/* Submit Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.submitButton,
+                    submittingReport && styles.submitButtonDisabled
+                  ]}
                   onPress={submitReport}
                   disabled={submittingReport}
                 >
                   {submittingReport ? (
-                    <ActivityIndicator color="#000000" size="small" />
+                    <ActivityIndicator size="small" color="#000000" />
                   ) : (
-                    <MaterialIcons name="check" size={20} color="#000000" />
+                    <MaterialIcons name="send" size={20} color="#000000" />
                   )}
                   <Text style={styles.submitButtonText}>
                     {submittingReport ? 'Submitting...' : 'Submit Report'}
                   </Text>
                 </TouchableOpacity>
-              )}
-            </View>
-          </Animated.View>
-        )}
+              </View>
+            </Animated.View>
+          )}
+
+          {/* Recent Reports */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Recent Reports</Text>
+            
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#00D9FF" />
+                <Text style={styles.loadingText}>Loading reports...</Text>
+              </View>
+            ) : incidents.length === 0 ? (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="assignment" size={48} color="#A0AFBB" />
+                <Text style={styles.emptyStateTitle}>No Reports Yet</Text>
+                <Text style={styles.emptyStateText}>
+                  You haven't submitted any incident reports. Tap one of the buttons above to report an incident.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.reportsContainer}>
+                {incidents.map((incident) => (
+                  <View key={incident.id} style={styles.incidentCard}>
+                    <View 
+                      style={[
+                        styles.severityIndicator, 
+                        { backgroundColor: getSeverityColor(incident.severity) }
+                      ]} 
+                    />
+                    <View style={styles.incidentContent}>
+                      <View style={styles.incidentHeader}>
+                        <View style={styles.incidentTypeContainer}>
+                          <MaterialIcons 
+                            name={getSeverityIcon(incident.severity)} 
+                            size={16} 
+                            color={getSeverityColor(incident.severity)} 
+                          />
+                          <Text style={[
+                            styles.incidentType, 
+                            { color: getSeverityColor(incident.severity) }
+                          ]}>
+                            {incident.category}
+                          </Text>
+                        </View>
+                        <View style={[
+                          styles.statusBadge,
+                          { backgroundColor: getStatusColor(incident.status).bg }
+                        ]}>
+                          <Text style={[
+                            styles.statusText,
+                            { color: getStatusColor(incident.status).text }
+                          ]}>
+                            {incident.status}
+                          </Text>
+                        </View>
+                      </View>
+                      
+                      <Text style={styles.incidentTitle} numberOfLines={1}>
+                        {incident.title}
+                      </Text>
+                      
+                      <Text style={styles.incidentDescription} numberOfLines={2}>
+                        {incident.description}
+                      </Text>
+                      
+                      <View style={styles.incidentMeta}>
+                        <View style={styles.metaItem}>
+                          <MaterialIcons name="schedule" size={12} color="#A0AFBB" />
+                          <Text style={styles.metaText}>
+                            {formatDate(incident.createdAt)}
+                          </Text>
+                        </View>
+                        <View style={styles.metaItem}>
+                          <MaterialIcons name="location-on" size={12} color="#A0AFBB" />
+                          <Text style={styles.metaText} numberOfLines={1}>
+                            {incident.location?.address || 'Location not available'}
+                          </Text>
+                        </View>
+                        <View style={styles.reportIdContainer}>
+                          <MaterialIcons name="confirmation-number" size={12} color="#00D9FF" />
+                          <Text style={styles.reportIdText}>
+                            {formatReportId(incident.reportId)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.spacer} />
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -794,67 +750,52 @@ const ReportsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F1419',
+    backgroundColor: '#1A1A1A',
   },
-  keyboardContainer: {
+  keyboardAvoid: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(0, 217, 255, 0.05)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 217, 255, 0.1)',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerText: {
+  scrollView: {
     flex: 1,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#A0AFBB',
-    marginTop: 2,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  loadingContainer: {
+  authPrompt: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 40,
     gap: 16,
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#A0AFBB',
-  },
-  loginRequiredContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    gap: 16,
-  },
-  loginRequiredTitle: {
+  authPromptTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
   },
-  loginRequiredText: {
+  authPromptText: {
     fontSize: 14,
     color: '#A0AFBB',
     textAlign: 'center',
+    lineHeight: 20,
+  },
+  header: {
+    paddingVertical: 20,
+  },
+  headerContent: {
+    gap: 4,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#A0AFBB',
+    textAlign: 'left',
     lineHeight: 20,
   },
   statsContainer: {
@@ -919,6 +860,15 @@ const styles = StyleSheet.create({
   refreshButton: {
     padding: 8,
   },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
   reportTypeContainer: {
     flexDirection: 'row',
     gap: 12,
@@ -950,14 +900,112 @@ const styles = StyleSheet.create({
     color: '#A0AFBB',
     textAlign: 'center',
   },
-  section: {
+  reportForm: {
+    backgroundColor: 'rgba(0, 217, 255, 0.04)',
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 217, 255, 0.15)',
   },
-  sectionTitle: {
-    fontSize: 16,
+  formHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  formTitle: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 12,
+  },
+  formContent: {
+    gap: 16,
+  },
+  inputGroup: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  textInput: {
+    backgroundColor: 'rgba(0, 217, 255, 0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 217, 255, 0.15)',
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  severityContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  severityButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0, 217, 255, 0.06)',
+  },
+  severityButtonActive: {
+    backgroundColor: 'rgba(0, 217, 255, 0.1)',
+  },
+  severityText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#A0AFBB',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  checkboxText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#00D9FF',
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  submitButtonDisabled: {
+    backgroundColor: 'rgba(0, 217, 255, 0.5)',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#A0AFBB',
   },
   emptyState: {
     alignItems: 'center',
@@ -975,13 +1023,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  reportsContainer: {
+    gap: 12,
+  },
   incidentCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: 'rgba(0, 217, 255, 0.04)',
     borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(0, 217, 255, 0.1)',
     gap: 12,
@@ -992,16 +1042,18 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     position: 'absolute',
     left: 0,
+    top: 0,
+    bottom: 0,
   },
   incidentContent: {
     flex: 1,
     marginLeft: 8,
+    gap: 8,
   },
   incidentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
   },
   incidentTypeContainer: {
     flexDirection: 'row',
@@ -1021,14 +1073,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  incidentTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   incidentDescription: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '400',
     color: '#FFFFFF',
-    marginBottom: 8,
+    lineHeight: 18,
   },
   incidentMeta: {
-    gap: 8,
+    gap: 6,
   },
   metaItem: {
     flexDirection: 'row',
@@ -1038,6 +1095,7 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 11,
     color: '#A0AFBB',
+    flex: 1,
   },
   reportIdContainer: {
     flexDirection: 'row',
@@ -1051,127 +1109,6 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: 20,
-  },
-  // Chat Styles
-  chatContainer: {
-    backgroundColor: 'rgba(0, 217, 255, 0.04)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 217, 255, 0.15)',
-    maxHeight: '50%',
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 217, 255, 0.1)',
-  },
-  chatHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  chatHeaderTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  cancelButton: {
-    padding: 4,
-  },
-  chatMessages: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    maxHeight: 200,
-  },
-  messageContainer: {
-    marginVertical: 4,
-    maxWidth: '80%',
-  },
-  botMessage: {
-    alignSelf: 'flex-start',
-  },
-  userMessage: {
-    alignSelf: 'flex-end',
-  },
-  messageText: {
-    fontSize: 13,
-    lineHeight: 18,
-    padding: 12,
-    borderRadius: 12,
-  },
-  botMessageText: {
-    backgroundColor: 'rgba(0, 217, 255, 0.1)',
-    color: '#FFFFFF',
-  },
-  userMessageText: {
-    backgroundColor: '#00D9FF',
-    color: '#000000',
-  },
-  messageTimestamp: {
-    fontSize: 10,
-    marginTop: 4,
-    marginHorizontal: 4,
-  },
-  botTimestamp: {
-    color: '#A0AFBB',
-    textAlign: 'left',
-  },
-  userTimestamp: {
-    color: '#A0AFBB',
-    textAlign: 'right',
-  },
-  chatInputContainer: {
-    padding: 16,
-    gap: 12,
-  },
-  chatInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  chatInput: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 217, 255, 0.06)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: '#FFFFFF',
-    fontSize: 14,
-    maxHeight: 100,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.15)',
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#00D9FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    backgroundColor: 'rgba(0, 217, 255, 0.3)',
-  },
-  submitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#00D9FF',
-    borderRadius: 12,
-  },
-  submitButtonDisabled: {
-    backgroundColor: 'rgba(0, 217, 255, 0.5)',
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
   },
 });
 
