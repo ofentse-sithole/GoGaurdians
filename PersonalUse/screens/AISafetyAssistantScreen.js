@@ -264,10 +264,20 @@ export default function AISafetyAssistantScreen({ navigation }) {
 
             {(isAssessing || threatResult) && (
               <View style={[styles.card, { marginTop: 16 }]}> 
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                   {threatResult && <ThreatIcon level={threatResult.threatLevel} />}
-                  <Text style={[styles.cardTitle, { marginLeft: 8 }]}>AI Assessment</Text>
+                  <Text style={[styles.cardTitle, { marginLeft: 8 }]}>Assessment</Text>
+                  {threatResult?.source === 'gemini' && (
+                    <View style={styles.sourceBadge}>
+                      <Text style={styles.sourceBadgeText}>AI</Text>
+                    </View>
+                  )}
                 </View>
+                {threatResult?.source === 'heuristic' && (
+                  <View style={[styles.offlineBadge, { alignSelf: 'flex-start', marginTop: 2, marginBottom: 8 }]}>
+                    <Text style={styles.offlineBadgeText}>Using heuristic (offline)</Text>
+                  </View>
+                )}
                 {isAssessing && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <ActivityIndicator size="small" color="#6B7280" />
@@ -400,6 +410,10 @@ const styles = StyleSheet.create({
   mutedText: { color: '#334155', lineHeight: 20 },
   chip: { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
   chipText: { color: '#1E40AF', fontWeight: '700', fontSize: 12 },
+  sourceBadge: { marginLeft: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  sourceBadgeText: { color: '#065F46', fontWeight: '800', fontSize: 10 },
+  offlineBadge: { marginLeft: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#CBD5E1' },
+  offlineBadgeText: { color: '#334155', fontWeight: '800', fontSize: 10 },
   emergencyBar: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E2E8F0', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
   emergencyBtn: { flex: 1, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   emergencyBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },

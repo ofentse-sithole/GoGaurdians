@@ -1,46 +1,89 @@
-import axios from 'axios';
+// Backend fallback removed; Gemini (if configured) + heuristic only
 
 /**
  * AI Safety Assistant Service
  * - assessThreatLevel: returns { threatLevel: 'LOW'|'MEDIUM'|'HIGH', advice: string }
  * - getGuidance: returns { guidance: string }
  *
- * If a backend is available, set AI_ASSISTANT_URL and we will call:
- *  - POST `${AI_ASSISTANT_URL}/assess`
- *  - POST `${AI_ASSISTANT_URL}/guidance`
- * Otherwise we fall back to a local heuristic.
+ * This client uses Gemini directly if a key is configured via Expo extras;
+ * otherwise it falls back to a local heuristic.
  */
 
-const FALLBACK_AI = true;
+// Backend proxy support removed; no server calls here.
 
-const getEnvUrl = () => {
-  // Try Expo extra (preferred), else hardcoded placeholder
+const getGeminiConfig = () => {
   try {
     const Constants = require('expo-constants').default;
     const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
-    const ai = extra?.api?.ai ?? {};
-    return ai.assistance;
-  } catch (e) {
-    return null;
+    const ai = extra?.ai ?? {};
+    return { key: ai.geminiKey, model: ai.model || 'gemini-1.5-flash' };
+  } catch {
+    return { key: null, model: null };
   }
 };
 
-const AI_ASSISTANCE_URL = getEnvUrl() || 'http://localhost:3000/api/v1/ai/assistance';
+async function callGeminiJSON(prompt, { key, model }) {
+  if (!key || !model) return null;
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    const body = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 512,
+        response_mime_type: 'application/json',
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+      ],
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    const json = await res.json();
+    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      // If model ignored JSON request, try to coerce minimal shape
+      return { guidance: text };
+    }
+  } catch (err) {
+    console.warn('[AISafetyService] Gemini call failed:', err?.message || err);
+    return null;
+  }
+}
+
+// No AI_ASSISTANCE_URL: removed per design (client-only Gemini + heuristic)
 
 export async function assessThreatLevel(values) {
   const { surroundings, userInformation } = values;
 
-  if (!FALLBACK_AI && AI_ASSISTANCE_URL) {
-    try {
-      const { data } = await axios.post(`${AI_ASSISTANCE_URL}/assess`, {
-        surroundings,
-        userInformation,
-      });
-      return data;
-    } catch (e) {
-      // fall through to heuristic
+  // Try Gemini client-only path if configured (prototype only; key is exposed in client)
+  const gemini = getGeminiConfig();
+  if (gemini.key) {
+    console.log('[AISafetyService] Using Gemini for threat assessment (model:', gemini.model, ')');
+    const prompt = `You are an AI safety assistant. Read the user's brief description and classify threat as LOW, MEDIUM, or HIGH. Reply in JSON only with keys: threatLevel (LOW|MEDIUM|HIGH) and advice (short, actionable, 2-4 lines).\n\nDescription: "${surroundings} ${userInformation || ''}"`;
+    const ai = await callGeminiJSON(prompt, gemini);
+    if (ai && ai.threatLevel && ai.advice) {
+      return { threatLevel: (ai.threatLevel || 'LOW').toUpperCase(), advice: ai.advice, source: 'gemini' };
     }
   }
+
+  // No backend path; fall through to heuristic if Gemini not available
 
   // Heuristic fallback
   const text = `${surroundings} ${userInformation || ''}`.toLowerCase();
@@ -75,20 +118,25 @@ export async function assessThreatLevel(values) {
   return {
     threatLevel,
     advice: adviceByLevel[threatLevel].join('\n• '),
+    source: 'heuristic',
   };
 }
 
 export async function getGuidance(values) {
   const { situation } = values;
 
-  if (!FALLBACK_AI && AI_ASSISTANCE_URL) {
-    try {
-      const { data } = await axios.post(`${AI_ASSISTANCE_URL}/guidance`, { situation });
-      return data;
-    } catch (e) {
-      // fall back
+  // Try Gemini client-only path if configured
+  const gemini = getGeminiConfig();
+  if (gemini.key) {
+    console.log('[AISafetyService] Using Gemini for guidance (model:', gemini.model, ')');
+    const prompt = `You are an AI safety assistant. The user describes an emergency. Provide concise, step-by-step guidance (3-6 steps). Reply as JSON: { "guidance": "multi-line bullet list" }.\n\nEmergency: "${situation}"`;
+    const ai = await callGeminiJSON(prompt, gemini);
+    if (ai && ai.guidance) {
+      return { guidance: ai.guidance };
     }
   }
+
+  // No backend path; fall through to heuristic if Gemini not available
 
   const text = (situation || '').toLowerCase();
 
