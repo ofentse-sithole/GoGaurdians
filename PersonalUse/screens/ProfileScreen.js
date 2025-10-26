@@ -43,7 +43,6 @@ const ProfileScreen = () => {
     locationTracking: true,
     emergencyAlerts: true,
     communityAlerts: true,
-    biometricAuth: false,
   });
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(userProfile);
@@ -84,7 +83,6 @@ const ProfileScreen = () => {
           locationTracking: prefs.notifications ?? true, // fallback mapping
           emergencyAlerts: prefs.notifications ?? true,
           communityAlerts: prefs.emailUpdates ?? true,
-          biometricAuth: prefs.biometricAuth ?? false,
         });
       } catch (e) {
         console.warn('Failed to load profile:', e);
@@ -438,21 +436,7 @@ const ProfileScreen = () => {
             />
           </View>
 
-          <View style={styles.settingCard}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="fingerprint" size={20} color="#00D9FF" />
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Biometric Auth</Text>
-                <Text style={styles.settingDesc}>Use fingerprint or face to unlock</Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.biometricAuth}
-              onValueChange={() => toggleSetting('biometricAuth')}
-              trackColor={{ false: '#444', true: '#00D9FF' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+          {/* Biometric Auth removed */}
         </View>
 
         {/* Account Management */}

@@ -245,210 +245,217 @@ const ReportsScreen = () => {
         </View>
       </View>
 
-      <ScrollView
+      <FlatList
         style={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Statistics */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <View style={styles.statIconBox}>
-              <MaterialIcons name="summarize" size={24} color="#00D9FF" />
+        contentContainerStyle={{ paddingBottom: 20 }}
+        data={alerts}
+        keyExtractor={(item) => item.id}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        ListHeaderComponent={
+          <>
+            {/* Statistics */}
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <View style={styles.statIconBox}>
+                  <MaterialIcons name="summarize" size={24} color="#00D9FF" />
+                </View>
+                <Text style={styles.statValue}>{computedStats.total}</Text>
+                <Text style={styles.statLabel}>Total Reports</Text>
+              </View>
+
+              <View style={styles.statItem}>
+                <View style={styles.statIconBox}>
+                  <MaterialIcons name="calendar-today" size={24} color="#00D9FF" />
+                </View>
+                <Text style={styles.statValue}>{computedStats.thisMonth}</Text>
+                <Text style={styles.statLabel}>This Month</Text>
+              </View>
+
+              <View style={styles.statItem}>
+                <View style={styles.statIconBox}>
+                  <MaterialIcons name="trending-up" size={24} color="#00D9FF" />
+                </View>
+                <Text style={styles.statValue}>{computedStats.resolved}</Text>
+                <Text style={styles.statLabel}>Resolved</Text>
+              </View>
+
+              <View style={styles.statItem}>
+                <View style={styles.statIconBox}>
+                  <MaterialIcons name="update" size={24} color="#FFB800" />
+                </View>
+                <Text style={styles.statValue}>{computedStats.active}</Text>
+                <Text style={styles.statLabel}>Active</Text>
+              </View>
             </View>
-            <Text style={styles.statValue}>{computedStats.total}</Text>
-            <Text style={styles.statLabel}>Total Reports</Text>
-          </View>
 
-          <View style={styles.statItem}>
-            <View style={styles.statIconBox}>
-              <MaterialIcons name="calendar-today" size={24} color="#00D9FF" />
+            {/* Section title */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Recent Reports</Text>
+              {loading && <Text style={{ color: '#A0AFBB' }}>Loading…</Text>}
             </View>
-            <Text style={styles.statValue}>{computedStats.thisMonth}</Text>
-            <Text style={styles.statLabel}>This Month</Text>
-          </View>
-
-          <View style={styles.statItem}>
-            <View style={styles.statIconBox}>
-              <MaterialIcons name="trending-up" size={24} color="#00D9FF" />
+          </>
+        }
+        ListEmptyComponent={
+          !loading ? (
+            <View style={[styles.section, { paddingHorizontal: 16 }]}>
+              <View style={styles.emptyState}>
+                <MaterialIcons name="report" size={48} color="#A0AFBB" />
+                <Text style={styles.emptyStateTitle}>No alerts yet</Text>
+                <Text style={styles.emptyStateText}>Be the first to report an incident to help your community.</Text>
+              </View>
             </View>
-            <Text style={styles.statValue}>{computedStats.resolved}</Text>
-            <Text style={styles.statLabel}>Resolved</Text>
-          </View>
-
-          <View style={styles.statItem}>
-            <View style={styles.statIconBox}>
-              <MaterialIcons name="update" size={24} color="#FFB800" />
-            </View>
-            <Text style={styles.statValue}>{computedStats.active}</Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-        </View>
-
-        {/* Active Incidents Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Reports</Text>
-
-          {loading ? (
-            <Text style={{ color: '#A0AFBB' }}>Loading…</Text>
-          ) : alerts.length === 0 ? (
-            <View style={styles.emptyState}> 
-              <MaterialIcons name="report" size={48} color="#A0AFBB" />
-              <Text style={styles.emptyStateTitle}>No alerts yet</Text>
-              <Text style={styles.emptyStateText}>Be the first to report an incident to help your community.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={alerts}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.incidentCard}
-                  onPress={() => {
-                    const hasLoc = !!item.location?.latitude;
-                    Alert.alert(
-                      `${item.type || 'Report'} - ${item.status || 'Reported'}`,
-                      `${item.title ? item.title + '\n' : ''}${item.description || ''}` + (hasLoc ? `\n\nTap OK to open map.` : ''),
-                      [
-                        { text: 'Close', style: 'cancel' },
-                        ...(hasLoc ? [{ text: 'Open Map', onPress: () => openInMaps(item.location) }] : []),
-                      ]
-                    );
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.severityIndicator,
-                      { backgroundColor: getSeverityColor(item.severity) },
-                    ]}
-                  />
-
-                  <View style={styles.incidentContent}>
-                    <View style={styles.incidentHeader}>
-                      <View style={styles.incidentTypeContainer}>
-                        <MaterialIcons
-                          name={getSeverityIcon(item.severity)}
-                          size={16}
-                          color={getSeverityColor(item.severity)}
-                        />
-                        <Text
-                          style={[styles.incidentType, { color: getSeverityColor(item.severity) }]}
-                        >
-                          {item.type || 'Report'}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor:
-                              (item.status || 'Reported') === 'Resolved'
-                                ? 'rgba(0, 217, 255, 0.15)'
-                                : (item.status || 'Reported') === 'Responded'
-                                ? 'rgba(255, 184, 0, 0.15)'
-                                : 'rgba(255, 107, 107, 0.15)',
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusText,
-                            {
-                              color:
-                                (item.status || 'Reported') === 'Resolved'
-                                  ? '#00D9FF'
-                                  : (item.status || 'Reported') === 'Responded'
-                                  ? '#FFB800'
-                                  : '#FF6B6B',
-                            },
-                          ]}
-                        >
-                          {item.status || 'Reported'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {!!item.title && (
-                      <Text style={styles.incidentTitle}>{item.title}</Text>
-                    )}
-                    {!!item.description && (
-                      <Text style={styles.incidentDescription}>{item.description}</Text>
-                    )}
-
-                    <View style={styles.incidentMeta}>
-                      {item.location?.latitude && (
-                        <TouchableOpacity style={styles.metaItem} onPress={() => openInMaps(item.location)}>
-                          <MaterialIcons name="location-on" size={14} color="#A0AFBB" />
-                          <Text style={styles.metaText}>{addressCache[item.id] || 'Location attached'}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {item.createdAt && (
-                        <View style={styles.metaItem}>
-                          <MaterialIcons name="schedule" size={14} color="#A0AFBB" />
-                          <Text style={styles.metaText}>{timeAgo(item.createdAt)}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Actions (creator-only for now) */}
-                    {auth?.currentUser?.uid && item.createdBy?.uid === auth.currentUser.uid && (
-                      <View style={styles.actionsRow}>
-                        <TouchableOpacity style={[styles.actionPill, { borderColor: '#FFB800' }]} onPress={() => updateStatus(item.id, 'Responded')}>
-                          <MaterialIcons name="task-alt" size={14} color="#FFB800" />
-                          <Text style={[styles.actionPillText, { color: '#FFB800' }]}>Mark Responded</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.actionPill, { borderColor: '#00D9FF' }]} onPress={() => updateStatus(item.id, 'Resolved')}>
-                          <MaterialIcons name="done-all" size={14} color="#00D9FF" />
-                          <Text style={[styles.actionPillText, { color: '#00D9FF' }]}>Mark Resolved</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-
-                  <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
-                </TouchableOpacity>
-              )}
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.incidentCard}
+            onPress={() => {
+              const hasLoc = !!item.location?.latitude;
+              Alert.alert(
+                `${item.type || 'Report'} - ${item.status || 'Reported'}`,
+                `${item.title ? item.title + '\n' : ''}${item.description || ''}` + (hasLoc ? `\n\nTap OK to open map.` : ''),
+                [
+                  { text: 'Close', style: 'cancel' },
+                  ...(hasLoc ? [{ text: 'Open Map', onPress: () => openInMaps(item.location) }] : []),
+                ]
+              );
+            }}
+          >
+            <View
+              style={[
+                styles.severityIndicator,
+                { backgroundColor: getSeverityColor(item.severity) },
+              ]}
             />
-          )}
-        </View>
 
-        {/* Report Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your Safety Profile</Text>
+            <View style={styles.incidentContent}>
+              <View style={styles.incidentHeader}>
+                <View style={styles.incidentTypeContainer}>
+                  <MaterialIcons
+                    name={getSeverityIcon(item.severity)}
+                    size={16}
+                    color={getSeverityColor(item.severity)}
+                  />
+                  <Text
+                    style={[styles.incidentType, { color: getSeverityColor(item.severity) }]}
+                  >
+                    {item.type || 'Report'}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor:
+                        (item.status || 'Reported') === 'Resolved'
+                          ? 'rgba(0, 217, 255, 0.15)'
+                          : (item.status || 'Reported') === 'Responded'
+                          ? 'rgba(255, 184, 0, 0.15)'
+                          : 'rgba(255, 107, 107, 0.15)',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      {
+                        color:
+                          (item.status || 'Reported') === 'Resolved'
+                            ? '#00D9FF'
+                            : (item.status || 'Reported') === 'Responded'
+                            ? '#FFB800'
+                            : '#FF6B6B',
+                      },
+                    ]}
+                  >
+                    {item.status || 'Reported'}
+                  </Text>
+                </View>
+              </View>
 
-          <View style={styles.profileCard}>
-            <View style={styles.profileMetric}>
-              <Text style={styles.profileLabel}>Response Rate</Text>
-              <Text style={styles.profileValue}>98%</Text>
+              {!!item.title && (
+                <Text style={styles.incidentTitle}>{item.title}</Text>
+              )}
+              {!!item.description && (
+                <Text style={styles.incidentDescription}>{item.description}</Text>
+              )}
+
+              <View style={styles.incidentMeta}>
+                {item.location?.latitude && (
+                  <TouchableOpacity style={styles.metaItem} onPress={() => openInMaps(item.location)}>
+                    <MaterialIcons name="location-on" size={14} color="#A0AFBB" />
+                    <Text style={styles.metaText}>{addressCache[item.id] || 'Location attached'}</Text>
+                  </TouchableOpacity>
+                )}
+                {item.createdAt && (
+                  <View style={styles.metaItem}>
+                    <MaterialIcons name="schedule" size={14} color="#A0AFBB" />
+                    <Text style={styles.metaText}>{timeAgo(item.createdAt)}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Actions (creator-only for now) */}
+              {auth?.currentUser?.uid && item.createdBy?.uid === auth.currentUser.uid && (
+                <View style={styles.actionsRow}>
+                  <TouchableOpacity style={[styles.actionPill, { borderColor: '#FFB800' }]} onPress={() => updateStatus(item.id, 'Responded')}>
+                    <MaterialIcons name="task-alt" size={14} color="#FFB800" />
+                    <Text style={[styles.actionPillText, { color: '#FFB800' }]}>Mark Responded</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.actionPill, { borderColor: '#00D9FF' }]} onPress={() => updateStatus(item.id, 'Resolved')}>
+                    <MaterialIcons name="done-all" size={14} color="#00D9FF" />
+                    <Text style={[styles.actionPillText, { color: '#00D9FF' }]}>Mark Resolved</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-            <View style={styles.divider} />
-            <View style={styles.profileMetric}>
-              <Text style={styles.profileLabel}>Avg Response Time</Text>
-              <Text style={styles.profileValue}>4 min</Text>
-            </View>
-          </View>
 
-          <View style={styles.infoBox}>
-            <AntDesign name="infocirlce" size={20} color="#00D9FF" />
-            <View style={styles.infoContent}>
-              <Text style={styles.infoTitle}>Report Details</Text>
-              <Text style={styles.infoText}>
-                All reports are confidential and encrypted. Your data helps improve community safety.
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Export Section */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.exportButton}>
-            <MaterialIcons name="download" size={20} color="#000000" />
-            <Text style={styles.exportButtonText}>Export Report History</Text>
+            <MaterialIcons name="chevron-right" size={24} color="#A0AFBB" />
           </TouchableOpacity>
-        </View>
+        )}
+        ListFooterComponent={
+          <>
+            {/* Report Summary */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Your Safety Profile</Text>
 
-        <View style={styles.spacer} />
-      </ScrollView>
+              <View style={styles.profileCard}>
+                <View style={styles.profileMetric}>
+                  <Text style={styles.profileLabel}>Response Rate</Text>
+                  <Text style={styles.profileValue}>98%</Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.profileMetric}>
+                  <Text style={styles.profileLabel}>Avg Response Time</Text>
+                  <Text style={styles.profileValue}>4 min</Text>
+                </View>
+              </View>
+
+              <View style={styles.infoBox}>
+                <AntDesign name="infocirlce" size={20} color="#00D9FF" />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoTitle}>Report Details</Text>
+                  <Text style={styles.infoText}>
+                    All reports are confidential and encrypted. Your data helps improve community safety.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Export Section */}
+            <View style={styles.section}>
+              <TouchableOpacity style={styles.exportButton}>
+                <MaterialIcons name="download" size={20} color="#000000" />
+                <Text style={styles.exportButtonText}>Export Report History</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.spacer} />
+          </>
+        }
+        showsVerticalScrollIndicator={false}
+      />
 
       {/* Floating Report Button */}
       <TouchableOpacity style={styles.fab} onPress={() => setShowReportModal(true)}>
