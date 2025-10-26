@@ -1,70 +1,133 @@
-// Backend fallback removed; Gemini (if configured) + heuristic only
+// Backend fallback removed; Gemini only (no offline heuristic)
 
 /**
  * AI Safety Assistant Service
  * - assessThreatLevel: returns { threatLevel: 'LOW'|'MEDIUM'|'HIGH', advice: string }
  * - getGuidance: returns { guidance: string }
  *
- * This client uses Gemini directly if a key is configured via Expo extras;
- * otherwise it falls back to a local heuristic.
+ * This client uses Gemini directly via a key configured in Expo extras.
+ * No offline heuristic fallback is provided. If the key is missing or a
+ * response cannot be parsed, an error is thrown for the caller to handle.
  */
 
 // Backend proxy support removed; no server calls here.
+
+// South Africa–specific system-style guidance used in prompts
+const SA_INSTRUCTIONS = `
+You are a South Africa–aware safety assistant for civilians.
+Tone: calm, clear, direct, and empathetic. Prefer short, actionable steps.
+
+Context and terminology:
+- Use South African terms (SAPS for police, EMS/ambulance, metro/fire).
+- Emergency numbers in South Africa: 112 (from any mobile), 10111 (SAPS police), 10177 (ambulance/fire). If unsure, advise 112 from a mobile as a universal route.
+- Encourage sharing live location with a trusted contact. Avoid confrontation; prioritise safety and distance.
+- Do not give advanced medical or legal advice; give broadly safe first-aid and safety guidance. Prompt to call emergency services when risk is non-trivial.
+- If guidance is location-sensitive, keep it generic and safe.
+- Keep responses suitable for on-the-go reading. Use concise bullets.
+`;
 
 const getGeminiConfig = () => {
   try {
     const Constants = require('expo-constants').default;
     const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
     const ai = extra?.ai ?? {};
-    return { key: ai.geminiKey, model: ai.model || 'gemini-1.5-flash' };
+    return { key: ai.geminiKey, model: ai.model || 'gemini-1.5-flash-latest' };
   } catch {
     return { key: null, model: null };
   }
 };
 
-async function callGeminiJSON(prompt, { key, model }) {
-  if (!key || !model) return null;
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-    const body = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 512,
-        response_mime_type: 'application/json',
-      },
-      safetySettings: [
-        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      ],
-    };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-    const json = await res.json();
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      // If model ignored JSON request, try to coerce minimal shape
-      return { guidance: text };
-    }
-  } catch (err) {
-    console.warn('[AISafetyService] Gemini call failed:', err?.message || err);
-    return null;
+function getModelCandidates(model) {
+  if (!model) return [];
+  const candidates = new Set();
+  candidates.add(model);
+  // If the model doesn't already specify a suffix, try common aliases.
+  if (!/-latest$/.test(model)) candidates.add(`${model}-latest`);
+  if (!/-\d{3}$/.test(model)) candidates.add(`${model}-001`);
+  // Common public variants for 1.5 flash
+  if (/gemini-1\.5-flash/.test(model)) {
+    candidates.add('gemini-1.5-flash-latest');
+    candidates.add('gemini-1.5-flash-001');
+    candidates.add('gemini-1.5-flash-8b-latest');
+    candidates.add('gemini-1.5-flash-8b');
   }
+  return Array.from(candidates);
+}
+
+async function callGeminiJSON(prompt, { key, model }) {
+  if (!key || !model) {
+    const err = new Error('AI_UNAVAILABLE: Gemini API key/model not configured');
+    err.code = 'AI_UNAVAILABLE';
+    throw err;
+  }
+  const candidates = getModelCandidates(model);
+  let lastErr;
+  const apiVersions = ['v1beta', 'v1'];
+  for (const candidate of candidates) {
+    for (const ver of apiVersions) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/${ver}/models/${encodeURIComponent(candidate)}:generateContent`;
+      const body = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${SA_INSTRUCTIONS}\n\n${prompt}` }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 512,
+          response_mime_type: 'application/json',
+        },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        ],
+      };
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          // If 404, try the next candidate or API version; else throw immediately
+          if (res.status === 404) {
+            lastErr = new Error(`Gemini HTTP 404 for model ${candidate} on ${ver}`);
+            lastErr.code = 'AI_HTTP_ERROR_404';
+            continue;
+          }
+          const err = new Error(`Gemini HTTP ${res.status}`);
+          err.code = 'AI_HTTP_ERROR';
+          throw err;
+        }
+        const json = await res.json();
+        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          const err = new Error('AI_RESPONSE_EMPTY');
+          err.code = 'AI_RESPONSE_EMPTY';
+          throw err;
+        }
+        try {
+          return JSON.parse(text);
+        } catch {
+          return { freeText: text };
+        }
+      } catch (err) {
+        // For non-404, bubble immediately
+        if (err?.code && err.code !== 'AI_HTTP_ERROR_404') {
+          console.warn('[AISafetyService] Gemini call failed:', err?.message || err);
+          throw err;
+        }
+        // else keep trying next version or candidate
+        lastErr = err;
+      }
+    }
+  }
+  // Exhausted candidates
+  console.warn('[AISafetyService] Gemini models exhausted. Last error:', lastErr?.message || lastErr);
+  throw lastErr || new Error('AI_MODEL_NOT_FOUND');
 }
 
 // No AI_ASSISTANCE_URL: removed per design (client-only Gemini + heuristic)
@@ -72,111 +135,48 @@ async function callGeminiJSON(prompt, { key, model }) {
 export async function assessThreatLevel(values) {
   const { surroundings, userInformation } = values;
 
-  // Try Gemini client-only path if configured (prototype only; key is exposed in client)
+  // Gemini-only path (prototype: key is exposed in client)
   const gemini = getGeminiConfig();
-  if (gemini.key) {
-    console.log('[AISafetyService] Using Gemini for threat assessment (model:', gemini.model, ')');
-    const prompt = `You are an AI safety assistant. Read the user's brief description and classify threat as LOW, MEDIUM, or HIGH. Reply in JSON only with keys: threatLevel (LOW|MEDIUM|HIGH) and advice (short, actionable, 2-4 lines).\n\nDescription: "${surroundings} ${userInformation || ''}"`;
-    const ai = await callGeminiJSON(prompt, gemini);
-    if (ai && ai.threatLevel && ai.advice) {
-      return { threatLevel: (ai.threatLevel || 'LOW').toUpperCase(), advice: ai.advice, source: 'gemini' };
-    }
+  console.log('[AISafetyService] Using Gemini for threat assessment (model:', gemini.model, ')');
+  const prompt = `
+Task: Read the user's brief description and classify threat as LOW, MEDIUM, or HIGH for a South African context.
+Return JSON only with keys:
+  - threatLevel: one of LOW | MEDIUM | HIGH
+  - advice: short, actionable, 2-4 lines (bulleted with hyphens or line breaks)
+Ensure advice references SA emergency options where appropriate (112 mobile; 10111 police; 10177 ambulance/fire).
+
+Description: "${surroundings} ${userInformation || ''}"
+`;
+  const ai = await callGeminiJSON(prompt, gemini);
+  if (ai && ai.threatLevel && ai.advice) {
+    return { threatLevel: (ai.threatLevel || 'LOW').toUpperCase(), advice: ai.advice, source: 'gemini' };
   }
-
-  // No backend path; fall through to heuristic if Gemini not available
-
-  // Heuristic fallback
-  const text = `${surroundings} ${userInformation || ''}`.toLowerCase();
-  const highSignals = ['weapon', 'gun', 'knife', 'shots', 'fire', 'explosion', 'attack', 'assault', 'threaten', 'blood'];
-  const mediumSignals = ['dark', 'alley', 'alone', 'shouting', 'crowd', 'aggressive', 'following', 'suspicious'];
-
-  let score = 0;
-  highSignals.forEach(k => { if (text.includes(k)) score += 3; });
-  mediumSignals.forEach(k => { if (text.includes(k)) score += 1; });
-
-  let threatLevel = 'LOW';
-  if (score >= 4) threatLevel = 'HIGH';
-  else if (score >= 2) threatLevel = 'MEDIUM';
-
-  const adviceByLevel = {
-    LOW: [
-      'Stay aware of your surroundings and keep your phone accessible.',
-      'Share your live location with a trusted contact if you feel uneasy.',
-    ],
-    MEDIUM: [
-      'Move to a well-lit, populated area immediately.',
-      'Avoid confrontation; increase distance from suspicious individuals or groups.',
-      'Call a trusted contact and let them know your location.',
-    ],
-    HIGH: [
-      'Call emergency services immediately.',
-      'Find the nearest safe public place (store, station, police).',
-      'If in immediate danger, make noise to attract attention.',
-    ],
-  };
-
-  return {
-    threatLevel,
-    advice: adviceByLevel[threatLevel].join('\n• '),
-    source: 'heuristic',
-  };
+  // If the model returned free text or an invalid structure, signal error
+  const err = new Error('AI_RESPONSE_INVALID: Missing threatLevel/advice');
+  err.code = 'AI_RESPONSE_INVALID';
+  throw err;
 }
 
 export async function getGuidance(values) {
   const { situation } = values;
 
-  // Try Gemini client-only path if configured
+  // Gemini-only path
   const gemini = getGeminiConfig();
-  if (gemini.key) {
-    console.log('[AISafetyService] Using Gemini for guidance (model:', gemini.model, ')');
-    const prompt = `You are an AI safety assistant. The user describes an emergency. Provide concise, step-by-step guidance (3-6 steps). Reply as JSON: { "guidance": "multi-line bullet list" }.\n\nEmergency: "${situation}"`;
-    const ai = await callGeminiJSON(prompt, gemini);
-    if (ai && ai.guidance) {
-      return { guidance: ai.guidance };
-    }
+  console.log('[AISafetyService] Using Gemini for guidance (model:', gemini.model, ')');
+  const prompt = `
+Task: The user describes an emergency in South Africa. Provide concise, step-by-step guidance (3–6 steps), suitable for on-the-go reading.
+Return JSON exactly as: { "guidance": "multi-line bullet list" }
+Rules: Use SA context. Where calling is needed, mention 112 (mobile), 10111 (police SAPS), or 10177 (ambulance/fire). Avoid advanced medical/legal specifics; keep advice broadly safe.
+
+Emergency: "${situation}"
+`;
+  const ai = await callGeminiJSON(prompt, gemini);
+  if (ai && ai.guidance) {
+    return { guidance: ai.guidance };
   }
-
-  // No backend path; fall through to heuristic if Gemini not available
-
-  const text = (situation || '').toLowerCase();
-
-  if (text.includes('fire')) {
-    return {
-      guidance: [
-        'Evacuate immediately; do not use elevators.',
-        'Stay low to avoid smoke; cover nose and mouth.',
-        'Once outside, call emergency services and move to a safe distance.',
-      ].join('\n- '),
-    };
-  }
-
-  if (text.includes('heart attack') || text.includes('cardiac') || text.includes('unconscious')) {
-    return {
-      guidance: [
-        'Call emergency services immediately.',
-        'If trained, begin CPR: 100-120 compressions per minute in the center of the chest.',
-        'Use an AED if available and follow voice prompts.',
-      ].join('\n- '),
-    };
-  }
-
-  if (text.includes('assault') || text.includes('attack') || text.includes('threat')) {
-    return {
-      guidance: [
-        'Move to a safe, visible, and populated area.',
-        'Avoid confrontation and create distance; use your voice to draw attention if needed.',
-        'Call emergency services and provide your location.',
-      ].join('\n- '),
-    };
-  }
-
-  return {
-    guidance: [
-      'Stay calm and move to a safe location.',
-      'If possible, contact a trusted person and share your live location.',
-      'Call emergency services if you feel in danger.',
-    ].join('\n- '),
-  };
+  const err = new Error('AI_RESPONSE_INVALID: Missing guidance');
+  err.code = 'AI_RESPONSE_INVALID';
+  throw err;
 }
 
 export default { assessThreatLevel, getGuidance };
