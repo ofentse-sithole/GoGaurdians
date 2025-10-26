@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import PanicButton from '../Components/PanicButton';
 import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
-import { MaterialIcons, Feather, AntDesign } from '@expo/vector-icons';
+import { MaterialIcons, Feather, AntDesign, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { sendEmergencyAlert } from '../Services/APIService';
 
@@ -31,6 +31,7 @@ const Homepage = () => {
     longitudeDelta: 0.0421,
   });
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+  const [showEmergencyOptions, setShowEmergencyOptions] = useState(false);
   const [showSafetyOverlay, setShowSafetyOverlay] = useState(false);
   const [incidentType, setIncidentType] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -244,12 +245,35 @@ const Homepage = () => {
       Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
 
+    // Show emergency service options instead of simple confirmation
+    setShowEmergencyOptions(true);
+  };
+
+  const handleEmergencyServiceSelect = (serviceType) => {
+    setShowEmergencyOptions(false);
+    
+    // Show confirmation for the specific service
+    const serviceNames = {
+      'POLICE': 'Police',
+      'AMBULANCE': 'Ambulance',
+      'PRIVATE_SECURITY': 'Private Security',
+      'CPF': 'Community Protection Force (CPF)'
+    };
+    
     Alert.alert(
-      'Confirm Emergency',
-      'Are you sure you want to send an SOS alert?',
+      `${serviceNames[serviceType]} Emergency`,
+      `Are you sure you want to alert ${serviceNames[serviceType]}? This will send your location and emergency details.`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', onPress: () => sendAlert('SOS'), style: 'destructive' },
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => setShowEmergencyOptions(true) // Go back to service selection
+        },
+        { 
+          text: `Alert ${serviceNames[serviceType]}`, 
+          onPress: () => sendAlert(serviceType),
+          style: 'destructive'
+        },
       ]
     );
   };
@@ -274,15 +298,39 @@ const Homepage = () => {
 
     // TODO: replace with authenticated user id
     const userId = 'demo-user';
+    
+    const serviceMessages = {
+      'POLICE': 'Police have been notified and are responding to your location.',
+      'AMBULANCE': 'Emergency medical services have been dispatched to your location.',
+      'PRIVATE_SECURITY': 'Private security has been alerted and is en route.',
+      'CPF': 'Community Protection Force has been notified and is responding.',
+      'MEDICAL': 'Medical emergency alert sent to responders.',
+      'SECURITY': 'Security threat alert sent to authorities.',
+      'HELP': 'General help request sent to emergency contacts.',
+      'SOS': 'SOS alert sent to all emergency services.'
+    };
+    
     try {
       const result = await sendEmergencyAlert(userId, type, coords);
       if (result?.success) {
-        Alert.alert('SOS Alert Sent', 'Responders have been notified.', [{ text: 'OK' }]);
+        Alert.alert(
+          'Emergency Alert Sent', 
+          serviceMessages[type] || 'Responders have been notified.',
+          [{ text: 'OK' }]
+        );
       } else {
-        Alert.alert('Network Issue', 'We could not reach the server. Your alert is queued.', [{ text: 'OK' }]);
+        Alert.alert(
+          'Network Issue', 
+          'We could not reach the server. Your alert is queued and will be sent when connection is restored.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (e) {
-      Alert.alert('Error', 'Unable to send alert. Please check your connection.', [{ text: 'OK' }]);
+      Alert.alert(
+        'Error', 
+        'Unable to send alert. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -364,17 +412,22 @@ const Homepage = () => {
         },
       ]}>
         {/* Drag Handle Area */}
-        <TouchableOpacity 
-          style={styles.dragHandleArea} 
-          {...panResponder.panHandlers}
-          onPress={toggleBottomSheet}
-          activeOpacity={0.7}
-        >
-          <View style={styles.bottomSheetHandle} />
-          <Text style={styles.dragHint}>
-            {isExpanded ? 'Swipe down to collapse' : 'Swipe up for more options'}
-          </Text>
-        </TouchableOpacity>
+        <TouchableOpacity
+      style={styles.dragHandleArea}
+      onPress={toggleBottomSheet}
+      activeOpacity={0.7}
+    >
+      <View style={styles.handleContainer}>
+        <MaterialIcons
+          name={isExpanded ? 'expand-less' : 'expand-more'}
+          size={26}
+          color="#007AFF"
+        />
+        <Text style={styles.dragHint}>
+          {isExpanded ? 'Press down to collapse' : 'Press up for more options'}
+        </Text>
+      </View>
+    </TouchableOpacity>
         
         <View style={styles.statusSection}>
           <View style={[styles.statusIndicator, { backgroundColor: location ? '#22C55E' : '#F59E0B' }]} />
@@ -399,10 +452,6 @@ const Homepage = () => {
             <MaterialIcons name="group" size={24} color="#007AFF" />
             <Text style={styles.actionLabel}>Family</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={toggleBottomSheet}>
-            <MaterialIcons name={isExpanded ? "expand_less" : "expand_more"} size={24} color="#007AFF" />
-            <Text style={styles.actionLabel}>More</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Expanded Content */}
@@ -413,11 +462,11 @@ const Homepage = () => {
               <TouchableOpacity style={styles.expandedButton} onPress={handleFamilyPress}>
                 <MaterialIcons name="contacts" size={20} color="#007AFF" />
                 <Text style={styles.expandedButtonText}>Manage Contacts</Text>
-                <MaterialIcons name="arrow_forward_ios" size={16} color="#007AFF" />
+                <MaterialIcons name="arrow-forward-ios" size={16} color="#007AFF" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.expandedSection}>
+            {/*<View style={styles.expandedSection}>
               <Text style={styles.expandedTitle}>Quick Emergency Actions</Text>
               <View style={styles.expandedActions}>
                 <TouchableOpacity 
@@ -453,7 +502,7 @@ const Homepage = () => {
                 <Text style={styles.expandedButtonText}>Update My Location</Text>
                 <MaterialIcons name="refresh" size={16} color="#007AFF" />
               </TouchableOpacity>
-            </View>
+            </View>*/}
           </View>
         )}
       </Animated.View>
@@ -466,6 +515,73 @@ const Homepage = () => {
           onClose={() => setShowSafetyOverlay(false)}
         />
       )}
+
+      {/* Emergency Service Options Modal */}
+      <Modal
+        visible={showEmergencyOptions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEmergencyOptions(false)}
+      >
+        <View style={styles.emergencyModalOverlay}>
+          <SafeAreaView style={styles.emergencyModalContainer}>
+            <View style={styles.emergencyModalContent}>
+              <View style={styles.emergencyModalHeader}>
+                <MaterialIcons name="warning" size={32} color="#EF4444" />
+                <Text style={styles.emergencyModalTitle}>Emergency Services</Text>
+                <Text style={styles.emergencyModalSubtitle}>
+                  Select the appropriate emergency service for your situation
+                </Text>
+              </View>
+
+              <View style={styles.emergencyServicesGrid}>
+                <TouchableOpacity
+                  style={[styles.emergencyServiceButton, styles.policeButton]}
+                  onPress={() => handleEmergencyServiceSelect('POLICE')}
+                >
+                  <MaterialIcons name="local-police" size={32} color="#FFFFFF" />
+                  <Text style={styles.emergencyServiceTitle}>Police</Text>
+                  <Text style={styles.emergencyServiceSubtitle}>Crime, violence, theft</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.emergencyServiceButton, styles.ambulanceButton]}
+                  onPress={() => handleEmergencyServiceSelect('AMBULANCE')}
+                >
+                  <MaterialIcons name="medical-services" size={32} color="#FFFFFF" />
+                  <Text style={styles.emergencyServiceTitle}>Medical</Text>
+                  <Text style={styles.emergencyServiceSubtitle}>Medical emergency</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.emergencyServiceButton, styles.securityButton]}
+                  onPress={() => handleEmergencyServiceSelect('PRIVATE_SECURITY')}
+                >
+                  <MaterialIcons name="security" size={32} color="#FFFFFF" />
+                  <Text style={styles.emergencyServiceTitle}>Private Gaurd</Text>
+                  <Text style={styles.emergencyServiceSubtitle}>Private security</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.emergencyServiceButton, styles.cpfButton]}
+                  onPress={() => handleEmergencyServiceSelect('CPF')}
+                >
+                  <MaterialIcons name="groups" size={32} color="#FFFFFF" />
+                  <Text style={styles.emergencyServiceTitle}>CPF</Text>
+                  <Text style={styles.emergencyServiceSubtitle}>Community protection</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.emergencyCancelButton}
+                onPress={() => setShowEmergencyOptions(false)}
+              >
+                <Text style={styles.emergencyCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
 
       <Modal
         visible={showSettings}
@@ -759,6 +875,105 @@ const styles = StyleSheet.create({
   },
   whiteText: {
     color: '#FFFFFF',
+  },
+  emergencyModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emergencyModalContainer: {
+    width: '100%',
+    maxWidth: 400,
+  },
+  emergencyModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emergencyModalHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emergencyModalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  emergencyModalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  emergencyServicesGrid: {
+    width: '100%',
+    gap: 12,
+    marginBottom: 24,
+  },
+  emergencyServiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  policeButton: {
+    backgroundColor: '#1E40AF', // Blue for police
+  },
+  ambulanceButton: {
+    backgroundColor: '#EF4444', // Red for ambulance
+  },
+  securityButton: {
+    backgroundColor: '#7C3AED', // Purple for private security
+  },
+  cpfButton: {
+    backgroundColor: '#059669', // Green for CPF
+  },
+  emergencyServiceTitle: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    marginLeft: 19,
+    flex: 1,
+  },
+  emergencyServiceSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginLeft: 16,
+    flex: 2,
+  },
+  emergencyCancelButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  emergencyCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  dragHandleArea: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  handleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dragHint: {
+    marginLeft: 6,
+    color: '#333',
+    fontSize: 14,
   },
 });
 
