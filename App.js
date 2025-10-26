@@ -7,7 +7,7 @@ import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
 import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
 import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
 import PersonalNavbar from "./PersonalUse/Components/PersonalNavbar";
-import config from './config';
+import AISafetyAssistantScreen from "./PersonalUse/screens/AISafetyAssistantScreen";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 
@@ -25,6 +25,7 @@ const App = () => {
         <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
         <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
         <Stack.Screen name="PersonalApp" component={PersonalNavbar} options={{ headerShown: false }} />
+        <Stack.Screen name="AIAssistant" component={AISafetyAssistantScreen} options={{ headerShown: false }} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
