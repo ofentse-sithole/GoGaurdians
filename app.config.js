@@ -48,6 +48,7 @@ export default ({ config }) => {
     },
     ios: {
       ...(config.ios || {}),
+      bundleIdentifier: process.env.IOS_BUNDLE_IDENTIFIER || 'com.codewithlfn.gogaurdians',
       infoPlist: {
         ...(config.ios?.infoPlist || {}),
         NSLocationWhenInUseUsageDescription:
@@ -71,6 +72,7 @@ export default ({ config }) => {
     },
     android: {
       ...(config.android || {}),
+      package: process.env.ANDROID_PACKAGE || 'com.musketeers.gogaurdians',
       // Add explicit permissions to ensure foreground (and optional background) location works
       permissions: Array.from(
         new Set([
