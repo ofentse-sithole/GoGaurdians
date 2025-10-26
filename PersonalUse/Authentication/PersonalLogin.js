@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
+import { Linking, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from "react-native-vector-icons/Ionicons";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -20,6 +21,27 @@ export default function PersonalLogin({ navigation }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const defaultUssd = '*112#';
+
+  const dialUSSD = async (code = defaultUssd) => {
+    try {
+      // iOS generally blocks USSD; show a gentle heads-up
+      if (Platform.OS === 'ios') {
+        Alert.alert('Note', 'USSD may not be supported on iOS devices.');
+      }
+      const encoded = code.replace(/#/g, '%23');
+      const url = `tel:${encoded}`;
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
+        Alert.alert('Not supported', 'USSD is not supported on this device.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      console.warn('USSD dial failed:', e);
+      Alert.alert('Failed', 'Could not open dialer for USSD.');
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -149,6 +171,15 @@ export default function PersonalLogin({ navigation }) {
               Don’t have an account? <Text style={styles.link}>Sign up</Text>
             </Text>
           </TouchableOpacity>
+
+          {/* USSD Quick Action */}
+          <TouchableOpacity
+            onPress={() => dialUSSD()}
+            style={styles.ussdButton}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.ussdText}>Dial USSD ({defaultUssd})</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -256,5 +287,18 @@ const styles = StyleSheet.create({
   link: {
     color: "#007bff",
     fontWeight: "600",
+  },
+  ussdButton: {
+    marginTop: 16,
+    borderColor: '#007bff',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  ussdText: {
+    color: '#007bff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
