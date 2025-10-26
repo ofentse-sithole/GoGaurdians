@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,156 +14,228 @@ import {
   TouchableWithoutFeedback,
   Linking,
   Share,
+  Switch,
+  RefreshControl,
 } from 'react-native';
-import * as Location from 'expo-location';
-import * as SMS from 'expo-sms';
 import { MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import LocationSharingService from '../LocationSharing/LocationSharing';
 
-const FamilyScreen = () => {
-  const [emergencyContacts, setEmergencyContacts] = useState([]);
-  const [location, setLocation] = useState(null);
-  const [isSharing, setIsSharing] = useState(false);
+const EnhancedFamilyScreen = () => {
+  const [familyMembers, setFamilyMembers] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [isLocationSharing, setIsLocationSharing] = useState(false);
+  const [familyLocations, setFamilyLocations] = useState(new Map());
   
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newContact, setNewContact] = useState({ name: '', phone: '', relation: '' });
+  const [newContact, setNewContact] = useState({ 
+    name: '', 
+    phone: '', 
+    relation: '',
+    isLocationShared: false 
+  });
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Initialize location service and load data
   useEffect(() => {
-    getCurrentLocation();
+    initializeLocationService();
+    loadFamilyMembers();
+    
+    // Set up location listeners
+    const removeLocationListener = LocationSharingService.addLocationListener(handleLocationUpdate);
+    const removeShareListener = LocationSharingService.addShareStatusListener(handleShareStatusUpdate);
+    
+    return () => {
+      removeLocationListener();
+      removeShareListener();
+    };
   }, []);
 
-  const getCurrentLocation = async () => {
+  // Refresh family locations periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshFamilyLocations();
+    }, 10000); // Refresh every 10 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const initializeLocationService = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const currentLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        setLocation(currentLocation.coords);
+      const initialized = await LocationSharingService.initialize();
+      if (initialized) {
+        console.log('Location sharing service initialized');
       }
     } catch (error) {
-      console.error('Error getting location:', error);
+      console.error('Failed to initialize location service:', error);
+      Alert.alert('Error', 'Failed to initialize location services');
     }
   };
 
-  const addContact = () => {
+  const loadFamilyMembers = async () => {
+    try {
+      const members = LocationSharingService.getFamilyMembers();
+      setFamilyMembers(members);
+      setIsLocationSharing(LocationSharingService.getSharingStatus());
+      await refreshFamilyLocations();
+    } catch (error) {
+      console.error('Failed to load family members:', error);
+    }
+  };
+
+  const refreshFamilyLocations = async () => {
+    try {
+      const locations = await LocationSharingService.getFamilyMembersLocations();
+      setFamilyLocations(locations);
+    } catch (error) {
+      console.error('Failed to refresh family locations:', error);
+    }
+  };
+
+  const handleLocationUpdate = (location) => {
+    setCurrentLocation(location);
+  };
+
+  const handleShareStatusUpdate = (sharing) => {
+    setIsLocationSharing(sharing);
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadFamilyMembers();
+    await refreshFamilyLocations();
+    setRefreshing(false);
+  }, []);
+
+  const toggleLocationSharing = async () => {
+    try {
+      if (isLocationSharing) {
+        await LocationSharingService.stopLocationSharing();
+        Alert.alert('Location Sharing Stopped', 'You are no longer sharing your location with family members.');
+      } else {
+        const success = await LocationSharingService.startLocationSharing();
+        if (success) {
+          Alert.alert('Location Sharing Started', 'Your location is now being shared with family members.');
+        } else {
+          Alert.alert('Error', 'Failed to start location sharing. Please check your permissions.');
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling location sharing:', error);
+      Alert.alert('Error', 'Failed to toggle location sharing');
+    }
+  };
+
+  const addContact = async () => {
     if (newContact.name && newContact.phone) {
-      const newId = emergencyContacts.length > 0 
-        ? Math.max(...emergencyContacts.map(c => c.id)) + 1 
-        : 1;
-      
-      setEmergencyContacts([
-        ...emergencyContacts,
-        {
-          id: newId,
+      try {
+        const member = await LocationSharingService.addFamilyMember({
           ...newContact,
           avatar: '👤',
-        },
-      ]);
-      setNewContact({ name: '', phone: '', relation: '' });
-      setShowAddModal(false);
-      Alert.alert('Success', 'Contact added successfully');
+        });
+        
+        await loadFamilyMembers();
+        setNewContact({ name: '', phone: '', relation: '', isLocationShared: false });
+        setShowAddModal(false);
+        Alert.alert('Success', 'Contact added successfully');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to add contact');
+      }
     } else {
       Alert.alert('Error', 'Please fill in at least name and phone number');
     }
   };
 
-  const deleteContact = (id) => {
-    setEmergencyContacts(emergencyContacts.filter(c => c.id !== id));
-  };
-
-  const shareLocationWithContact = async (contact) => {
-    try {
-      // Get fresh location
-      await getCurrentLocation();
-      
-      if (!location) {
-        Alert.alert('Location Error', 'Unable to get your current location. Please try again.');
-        return;
-      }
-
-      const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
-      const appleMapsUrl = `https://maps.apple.com/?q=${location.latitude},${location.longitude}`;
-      
-      const locationMessage = `Hi ${contact.name}, I'm sharing my current location with you:\n\n📍 Location: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}\n\n🗺️ View on Google Maps: ${googleMapsUrl}\n\n🍎 View on Apple Maps: ${appleMapsUrl}\n\nSent from GoGuardians Safety App`;
-
-      Alert.alert(
-        'Share Location',
-        `Send your current location to ${contact.name}?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Send SMS', 
-            onPress: () => sendLocationSMS(contact, locationMessage)
-          },
-          { 
-            text: 'Share Options', 
-            onPress: () => shareLocationGeneral(locationMessage)
-          },
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Unable to share location');
-    }
-  };
-
-  const sendLocationSMS = async (contact, message) => {
-    try {
-      const isAvailable = await SMS.isAvailableAsync();
-      if (isAvailable) {
-        await SMS.sendSMSAsync([contact.phone], message);
-        Alert.alert('Success', `Location sent to ${contact.name} via SMS`);
-      } else {
-        // Fallback to opening SMS app
-        const smsUrl = `sms:${contact.phone}?body=${encodeURIComponent(message)}`;
-        const supported = await Linking.canOpenURL(smsUrl);
-        if (supported) {
-          await Linking.openURL(smsUrl);
-        } else {
-          Alert.alert('Error', 'SMS not supported on this device');
-        }
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Unable to send SMS');
-    }
-  };
-
-  const shareLocationGeneral = async (message) => {
-    try {
-      await Share.share({
-        message: message,
-        title: 'My Current Location - GoGuardians',
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Unable to share location');
-    }
-  };
-
-  const shareLocationWithAllContacts = async () => {
-    if (emergencyContacts.length === 0) {
-      Alert.alert('No Contacts', 'Please add emergency contacts first');
-      return;
-    }
-
+  const deleteContact = async (memberId) => {
     Alert.alert(
-      'Share Location with All Contacts',
-      `Send your current location to all ${emergencyContacts.length} emergency contacts?`,
+      'Delete Contact',
+      'Are you sure you want to remove this family member?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Send to All', 
+        {
+          text: 'Delete',
+          style: 'destructive',
           onPress: async () => {
-            setIsSharing(true);
-            for (const contact of emergencyContacts) {
-              await shareLocationWithContact(contact);
+            const success = await LocationSharingService.removeFamilyMember(memberId);
+            if (success) {
+              await loadFamilyMembers();
+              Alert.alert('Success', 'Contact removed successfully');
+            } else {
+              Alert.alert('Error', 'Failed to remove contact');
             }
-            setIsSharing(false);
-            Alert.alert('Success', 'Location shared with all contacts');
           }
-        },
+        }
       ]
     );
   };
+
+  const toggleMemberLocationSharing = async (memberId, enabled) => {
+    try {
+      const success = await LocationSharingService.toggleMemberLocationSharing(memberId, enabled);
+      if (success) {
+        await loadFamilyMembers();
+      }
+    } catch (error) {
+      console.error('Error toggling member location sharing:', error);
+      Alert.alert('Error', 'Failed to update location sharing settings');
+    }
+  };
+
+  const viewMemberLocation = (member) => {
+    const memberData = familyLocations.get(member.id);
+    if (memberData && memberData.location) {
+      const { latitude, longitude } = memberData.location;
+      const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+      const appleMapsUrl = `https://maps.apple.com/?q=${latitude},${longitude}`;
+      
+      Alert.alert(
+        `${member.name}'s Location`,
+        `Last updated: ${new Date(memberData.lastLocationUpdate).toLocaleString()}\n\nCoordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'View on Maps', 
+            onPress: () => {
+              Alert.alert(
+                'Open in Maps',
+                'Choose your preferred maps app:',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Google Maps', onPress: () => Linking.openURL(googleMapsUrl) },
+                  { text: 'Apple Maps', onPress: () => Linking.openURL(appleMapsUrl) },
+                ]
+              );
+            }
+          },
+        ]
+      );
+    } else {
+      Alert.alert('No Location', `${member.name} is not currently sharing their location or location data is not available.`);
+    }
+  };
+
+  const sendEmergencyAlert = async () => {
+    Alert.alert(
+      'Emergency Alert',
+      'Send an emergency alert with your current location to all family members?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send Alert',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await LocationSharingService.sendEmergencyAlert('emergency');
+            if (success) {
+              Alert.alert('Alert Sent', 'Emergency alert has been sent to all family members with your current location.');
+            } else {
+              Alert.alert('Error', 'Failed to send emergency alert');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const callContact = async (phone) => {
     try {
       const phoneUrl = `tel:${phone}`;
@@ -181,8 +253,51 @@ const FamilyScreen = () => {
 
   const closeModal = () => {
     setShowAddModal(false);
-    setNewContact({ name: '', phone: '', relation: '' });
+    setNewContact({ name: '', phone: '', relation: '', isLocationShared: false });
     Keyboard.dismiss();
+  };
+
+  const getLocationStatus = (member) => {
+    const memberData = familyLocations.get(member.id);
+    if (!memberData || !memberData.isLocationShared) {
+      return 'Location sharing disabled';
+    }
+    
+    if (!memberData.location) {
+      return 'Location not available';
+    }
+    
+    const lastUpdate = new Date(memberData.lastLocationUpdate);
+    const now = new Date();
+    const diffMinutes = Math.floor((now - lastUpdate) / 60000);
+    
+    if (diffMinutes < 1) {
+      return 'Live';
+    } else if (diffMinutes < 60) {
+      return `${diffMinutes}m ago`;
+    } else {
+      const diffHours = Math.floor(diffMinutes / 60);
+      return `${diffHours}h ago`;
+    }
+  };
+
+  const getLocationStatusColor = (member) => {
+    const memberData = familyLocations.get(member.id);
+    if (!memberData || !memberData.isLocationShared || !memberData.location) {
+      return '#F59E0B';
+    }
+    
+    const lastUpdate = new Date(memberData.lastLocationUpdate);
+    const now = new Date();
+    const diffMinutes = Math.floor((now - lastUpdate) / 60000);
+    
+    if (diffMinutes < 5) {
+      return '#22C55E'; // Green for recent
+    } else if (diffMinutes < 30) {
+      return '#F59E0B'; // Yellow for somewhat old
+    } else {
+      return '#EF4444'; // Red for old
+    }
   };
 
   return (
@@ -191,65 +306,79 @@ const FamilyScreen = () => {
         <View style={styles.headerContent}>
           <AntDesign name="contacts" size={24} color="#00D9FF" />
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Family & Contacts</Text>
-            <Text style={styles.headerSubtitle}>{emergencyContacts.length} contacts</Text>
+            <Text style={styles.headerTitle}>Family Location Center</Text>
+            <Text style={styles.headerSubtitle}>{familyMembers.length} members</Text>
           </View>
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Quick Stats */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <MaterialIcons name="people" size={32} color="#00D9FF" />
-            <Text style={styles.statNumber}>{emergencyContacts.length}</Text>
-            <Text style={styles.statLabel}>Trusted Contacts</Text>
-          </View>
-          <View style={styles.statCard}>
-            <MaterialIcons name="location-on" size={32} color={location ? "#22C55E" : "#F59E0B"} />
-            <Text style={styles.statNumber}>{location ? "Active" : "Off"}</Text>
-            <Text style={styles.statLabel}>Location Sharing</Text>
-          </View>
-        </View>
-
-        {/* Location Sharing Section */}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Location Sharing Control */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Location Sharing</Text>
-            <TouchableOpacity
-              onPress={getCurrentLocation}
-              style={styles.refreshButton}
-            >
-              <MaterialIcons name="refresh" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>Your Location Sharing</Text>
+            <Switch
+              value={isLocationSharing}
+              onValueChange={toggleLocationSharing}
+              trackColor={{ false: '#374151', true: '#00D9FF' }}
+              thumbColor={isLocationSharing ? '#FFFFFF' : '#9CA3AF'}
+            />
           </View>
 
           <View style={styles.locationCard}>
             <MaterialIcons name="my-location" size={24} color="#00D9FF" />
             <View style={styles.locationInfo}>
-              <Text style={styles.locationTitle}>Current Location</Text>
+              <Text style={styles.locationTitle}>Live Location Sharing</Text>
               <Text style={styles.locationText}>
-                {location 
-                  ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`
-                  : 'Location not available'
+                {isLocationSharing 
+                  ? currentLocation 
+                    ? `Active: ${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}`
+                    : 'Getting location...'
+                  : 'Location sharing is disabled'
                 }
               </Text>
             </View>
             <TouchableOpacity
-              onPress={shareLocationWithAllContacts}
-              style={[styles.shareAllButton, { opacity: isSharing ? 0.5 : 1 }]}
-              disabled={isSharing || emergencyContacts.length === 0}
+              onPress={sendEmergencyAlert}
+              style={styles.emergencyButton}
             >
-              <MaterialIcons name="share" size={20} color="#FFFFFF" />
-              <Text style={styles.shareAllText}>Share All</Text>
+              <MaterialIcons name="warning" size={20} color="#FFFFFF" />
+              <Text style={styles.emergencyText}>SOS</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Contacts List */}
+        {/* Quick Stats */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <MaterialIcons name="people" size={32} color="#00D9FF" />
+            <Text style={styles.statNumber}>{familyMembers.length}</Text>
+            <Text style={styles.statLabel}>Family Members</Text>
+          </View>
+          <View style={styles.statCard}>
+            <MaterialIcons name="location-on" size={32} color={isLocationSharing ? "#22C55E" : "#F59E0B"} />
+            <Text style={styles.statNumber}>{isLocationSharing ? "Active" : "Off"}</Text>
+            <Text style={styles.statLabel}>Your Location</Text>
+          </View>
+          <View style={styles.statCard}>
+            <MaterialIcons name="visibility" size={32} color="#00D9FF" />
+            <Text style={styles.statNumber}>
+              {familyMembers.filter(m => familyLocations.get(m.id)?.isLocationShared).length}
+            </Text>
+            <Text style={styles.statLabel}>Sharing Location</Text>
+          </View>
+        </View>
+
+        {/* Family Members List */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Emergency Contacts</Text>
+            <Text style={styles.sectionTitle}>Family Members</Text>
             <TouchableOpacity
               onPress={() => setShowAddModal(true)}
               style={styles.addButton}
@@ -258,86 +387,90 @@ const FamilyScreen = () => {
             </TouchableOpacity>
           </View>
 
-          {emergencyContacts.length === 0 ? (
+          {familyMembers.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialIcons name="person-add" size={48} color="#A0AFBB" />
-              <Text style={styles.emptyStateTitle}>No Emergency Contacts</Text>
+              <Text style={styles.emptyStateTitle}>No Family Members</Text>
               <Text style={styles.emptyStateText}>
-                Add trusted contacts who will be notified during emergencies
+                Add family members to start sharing locations and stay connected
               </Text>
               <TouchableOpacity
                 onPress={() => setShowAddModal(true)}
                 style={styles.emptyStateButton}
               >
                 <MaterialIcons name="add" size={20} color="#FFFFFF" />
-                <Text style={styles.emptyStateButtonText}>Add First Contact</Text>
+                <Text style={styles.emptyStateButtonText}>Add First Member</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            emergencyContacts.map((contact) => (
-              <View key={contact.id} style={styles.contactCard}>
-                <View style={styles.contactAvatar}>
-                  <Text style={styles.avatarEmoji}>{contact.avatar}</Text>
+            familyMembers.map((member) => {
+              const memberData = familyLocations.get(member.id);
+              return (
+                <View key={member.id} style={styles.contactCard}>
+                  <View style={styles.contactAvatar}>
+                    <Text style={styles.avatarEmoji}>{member.avatar}</Text>
+                  </View>
+                  
+                  <View style={styles.contactInfo}>
+                    <Text style={styles.contactName}>{member.name}</Text>
+                    {member.relation && (
+                      <Text style={styles.contactRelation}>{member.relation}</Text>
+                    )}
+                    <Text style={styles.contactPhone}>{member.phone}</Text>
+                    <View style={styles.locationStatus}>
+                      <View 
+                        style={[
+                          styles.statusDot, 
+                          { backgroundColor: getLocationStatusColor(member) }
+                        ]} 
+                      />
+                      <Text style={styles.locationStatusText}>
+                        {getLocationStatus(member)}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.contactActions}>
+                    <TouchableOpacity
+                      onPress={() => callContact(member.phone)}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name="phone" size={18} color="#00D9FF" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      onPress={() => viewMemberLocation(member)}
+                      style={[
+                        styles.actionButton,
+                        { opacity: memberData?.location ? 1 : 0.5 }
+                      ]}
+                      disabled={!memberData?.location}
+                    >
+                      <MaterialIcons name="location-on" size={18} color="#22C55E" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      onPress={() => toggleMemberLocationSharing(member.id, !memberData?.isLocationShared)}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons 
+                        name={memberData?.isLocationShared ? "visibility" : "visibility-off"} 
+                        size={18} 
+                        color={memberData?.isLocationShared ? "#22C55E" : "#F59E0B"} 
+                      />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      onPress={() => deleteContact(member.id)}
+                      style={styles.actionButton}
+                    >
+                      <MaterialIcons name="delete" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                
-                <View style={styles.contactInfo}>
-                  <Text style={styles.contactName}>{contact.name}</Text>
-                  <Text style={styles.contactRelation}>{contact.relation}</Text>
-                  <Text style={styles.contactPhone}>{contact.phone}</Text>
-                </View>
-
-                <View style={styles.contactActions}>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => callContact(contact.phone)}
-                  >
-                    <MaterialIcons name="phone" size={20} color="#00D9FF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => shareLocationWithContact(contact)}
-                  >
-                    <MaterialIcons name="share_location" size={20} color="#22C55E" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => deleteContact(contact.id)}
-                  >
-                    <MaterialIcons name="close" size={20} color="#FF6B6B" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
-        </View>
-
-        {/* Add Contact Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>How It Works</Text>
-          
-          <View style={styles.infoCard}>
-            <MaterialIcons name="notifications" size={24} color="#00D9FF" />
-            <View style={styles.infoContent}>
-              <Text style={styles.infoTitle}>Instant Alerts</Text>
-              <Text style={styles.infoText}>Your emergency contacts receive immediate alerts with your location</Text>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <MaterialIcons name="location-on" size={24} color="#00D9FF" />
-            <View style={styles.infoContent}>
-              <Text style={styles.infoTitle}>Share Location</Text>
-              <Text style={styles.infoText}>Real-time location sharing during emergency situations</Text>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <MaterialIcons name="security" size={24} color="#00D9FF" />
-            <View style={styles.infoContent}>
-              <Text style={styles.infoTitle}>Privacy First</Text>
-              <Text style={styles.infoText}>Your data is encrypted and secure. Contacts only shared during emergencies</Text>
-            </View>
-          </View>
         </View>
 
         <View style={styles.spacer} />
@@ -346,99 +479,102 @@ const FamilyScreen = () => {
       {/* Add Contact Modal */}
       <Modal
         visible={showAddModal}
-        transparent
         animationType="slide"
+        presentationStyle="pageSheet"
         onRequestClose={closeModal}
       >
-        <TouchableWithoutFeedback onPress={closeModal}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.keyboardAvoidingView}
-              >
-                <View style={styles.modalContent}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Add Emergency Contact</Text>
-                    <TouchableOpacity onPress={closeModal}>
-                      <AntDesign name="close" size={24} color="#333" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <ScrollView 
-                    style={styles.modalBody}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Full Name *</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter name"
-                        placeholderTextColor="#999"
-                        value={newContact.name}
-                        onChangeText={(text) => setNewContact({ ...newContact, name: text })}
-                        returnKeyType="next"
-                      />
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Phone Number *</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter phone number"
-                        placeholderTextColor="#999"
-                        value={newContact.phone}
-                        onChangeText={(text) => setNewContact({ ...newContact, phone: text })}
-                        keyboardType="phone-pad"
-                        returnKeyType="next"
-                      />
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Relationship</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="e.g., Sister, Mom, Friend"
-                        placeholderTextColor="#999"
-                        value={newContact.relation}
-                        onChangeText={(text) => setNewContact({ ...newContact, relation: text })}
-                        returnKeyType="done"
-                        onSubmitEditing={addContact}
-                      />
-                    </View>
-
-                    <Text style={styles.requiredNote}>* Required fields</Text>
-                  </ScrollView>
-
-                  <View style={styles.modalFooter}>
-                    <TouchableOpacity
-                      style={styles.cancelButton}
-                      onPress={closeModal}
-                    >
-                      <Text style={styles.cancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.confirmButton,
-                        (!newContact.name || !newContact.phone) && styles.confirmButtonDisabled
-                      ]}
-                      onPress={addContact}
-                      disabled={!newContact.name || !newContact.phone}
-                    >
-                      <Text style={[
-                        styles.confirmButtonText,
-                        (!newContact.name || !newContact.phone) && styles.confirmButtonTextDisabled
-                      ]}>
-                        Add Contact
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Add Family Member</Text>
+                  <TouchableOpacity onPress={closeModal}>
+                    <MaterialIcons name="close" size={24} color="#0F1419" />
+                  </TouchableOpacity>
                 </View>
-              </KeyboardAvoidingView>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Name *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter full name"
+                      value={newContact.name}
+                      onChangeText={(text) => setNewContact({ ...newContact, name: text })}
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Phone Number *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter phone number"
+                      value={newContact.phone}
+                      onChangeText={(text) => setNewContact({ ...newContact, phone: text })}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Relationship</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., Spouse, Child, Parent"
+                      value={newContact.relation}
+                      onChangeText={(text) => setNewContact({ ...newContact, relation: text })}
+                      autoCapitalize="words"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <View style={styles.switchContainer}>
+                      <Text style={styles.inputLabel}>Enable Location Sharing</Text>
+                      <Switch
+                        value={newContact.isLocationShared}
+                        onValueChange={(value) => setNewContact({ ...newContact, isLocationShared: value })}
+                        trackColor={{ false: '#374151', true: '#00D9FF' }}
+                        thumbColor={newContact.isLocationShared ? '#FFFFFF' : '#9CA3AF'}
+                      />
+                    </View>
+                    <Text style={styles.requiredNote}>
+                      Allow this family member to see your location and share theirs with you
+                    </Text>
+                  </View>
+
+                  <Text style={styles.requiredNote}>
+                    * Required fields
+                  </Text>
+                </ScrollView>
+
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity onPress={closeModal} style={styles.cancelButton}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={addContact}
+                    style={[
+                      styles.confirmButton,
+                      (!newContact.name || !newContact.phone) && styles.confirmButtonDisabled
+                    ]}
+                    disabled={!newContact.name || !newContact.phone}
+                  >
+                    <Text style={[
+                      styles.confirmButtonText,
+                      (!newContact.name || !newContact.phone) && styles.confirmButtonTextDisabled
+                    ]}>
+                      Add Member
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -450,62 +586,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F1419',
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(0, 217, 255, 0.05)',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 217, 255, 0.1)',
+    borderBottomColor: 'rgba(0, 217, 255, 0.15)',
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
   },
   headerText: {
-    flex: 1,
+    marginLeft: 12,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#A0AFBB',
     marginTop: 2,
   },
   content: {
     flex: 1,
-    padding: 16,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 217, 255, 0.08)',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.2)',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#00D9FF',
-    marginTop: 8,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#A0AFBB',
-    marginTop: 4,
-    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   section: {
-    marginBottom: 24,
+    marginTop: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -525,6 +634,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#00D9FF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 217, 255, 0.06)',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 217, 255, 0.15)',
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#A0AFBB',
+    marginTop: 4,
+    textAlign: 'center',
   },
   contactCard: {
     flexDirection: 'row',
@@ -567,6 +702,22 @@ const styles = StyleSheet.create({
     color: '#A0AFBB',
     marginTop: 4,
   },
+  locationStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  locationStatusText: {
+    fontSize: 11,
+    color: '#A0AFBB',
+    fontWeight: '500',
+  },
   contactActions: {
     flexDirection: 'row',
     gap: 6,
@@ -581,30 +732,80 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 217, 255, 0.2)',
   },
-  infoCard: {
+  locationCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(0, 217, 255, 0.06)',
     borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(0, 217, 255, 0.15)',
-    alignItems: 'flex-start',
-    gap: 12,
   },
-  infoContent: {
+  locationInfo: {
     flex: 1,
+    marginLeft: 12,
   },
-  infoTitle: {
+  locationTitle: {
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  infoText: {
+  locationText: {
     fontSize: 12,
     color: '#A0AFBB',
     marginTop: 4,
-    lineHeight: 18,
+  },
+  emergencyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  emergencyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  emptyState: {
+    backgroundColor: 'rgba(0, 217, 255, 0.06)',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 217, 255, 0.15)',
+    borderStyle: 'dashed',
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 16,
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#A0AFBB',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  emptyStateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00D9FF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 20,
+    gap: 8,
+  },
+  emptyStateButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000000',
   },
   spacer: {
     height: 20,
@@ -622,7 +823,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '85%',
-    minHeight: '50%',
+    minHeight: '60%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -660,6 +861,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#0F1419',
     backgroundColor: '#F9FAFB',
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   requiredNote: {
     fontSize: 12,
@@ -707,89 +914,6 @@ const styles = StyleSheet.create({
   confirmButtonTextDisabled: {
     color: '#9CA3AF',
   },
-  emptyState: {
-    backgroundColor: 'rgba(0, 217, 255, 0.06)',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.15)',
-    borderStyle: 'dashed',
-  },
-  emptyStateTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginTop: 16,
-  },
-  emptyStateText: {
-    fontSize: 13,
-    color: '#A0AFBB',
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  emptyStateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#00D9FF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginTop: 20,
-    gap: 8,
-  },
-  emptyStateButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  refreshButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#22C55E',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 217, 255, 0.06)',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 217, 255, 0.15)',
-  },
-  locationInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  locationTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#A0AFBB',
-    marginTop: 4,
-  },
-  shareAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#22C55E',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 4,
-  },
-  shareAllText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
 });
 
-export default FamilyScreen;
+export default EnhancedFamilyScreen;

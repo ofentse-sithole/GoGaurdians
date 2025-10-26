@@ -21,6 +21,19 @@ export default ({ config }) => {
 
   return {
     ...config,
+    plugins: [
+      ...(config.plugins || []),
+      [
+        'expo-location',
+        {
+          // These strings populate iOS permission dialogs via Info.plist
+          locationWhenInUsePermission:
+            'Allow $(PRODUCT_NAME) to access your location to show your live position and share it with family members.',
+          locationAlwaysAndWhenInUsePermission:
+            'Allow $(PRODUCT_NAME) to access your location even when the app is in the background to keep family members updated.',
+        },
+      ],
+    ],
     extra: {
       ...(config.extra || {}),
       firebase,
@@ -28,6 +41,17 @@ export default ({ config }) => {
     },
     ios: {
       ...(config.ios || {}),
+      infoPlist: {
+        ...(config.ios?.infoPlist || {}),
+        NSLocationWhenInUseUsageDescription:
+          'This app uses your location to show your live position and share it with family members for safety features.',
+        NSLocationAlwaysAndWhenInUseUsageDescription:
+          'This app may access your location in the background to keep your family updated about your safety.',
+        NSLocationTemporaryUsageDescriptionDictionary: {
+          PreciseLocation:
+            'We request precise location temporarily to provide accurate live updates for safety and family features.',
+        },
+      },
       config: {
         ...(config.ios?.config || {}),
         googleMapsApiKey: iosKey,
@@ -35,6 +59,17 @@ export default ({ config }) => {
     },
     android: {
       ...(config.android || {}),
+      // Add explicit permissions to ensure foreground (and optional background) location works
+      permissions: Array.from(
+        new Set([
+          ...(config.android?.permissions || []),
+          'android.permission.ACCESS_COARSE_LOCATION',
+          'android.permission.ACCESS_FINE_LOCATION',
+          // Include background location if your app needs it; safe to keep for future
+          'android.permission.ACCESS_BACKGROUND_LOCATION',
+          'android.permission.FOREGROUND_SERVICE',
+        ])
+      ),
       config: {
         ...(config.android?.config || {}),
         googleMaps: {
