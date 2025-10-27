@@ -1,5 +1,17 @@
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, firestore } from '../../firebaseConfig';
+import {
+  collection,
+  doc,
+  getDocs,
+  addDoc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 
 class LocationSharingService {
   constructor() {
@@ -14,15 +26,9 @@ class LocationSharingService {
   // Initialize location sharing service
   async initialize() {
     try {
-      // Request location permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        throw new Error('Location permission denied');
-      }
-
-      // Load existing family members from storage
+      if (status !== 'granted') throw new Error('Location permission denied');
       await this.loadFamilyMembers();
-      
       return true;
     } catch (error) {
       console.error('Failed to initialize location sharing:', error);
@@ -33,34 +39,31 @@ class LocationSharingService {
   // Start sharing location with family members
   async startLocationSharing() {
     try {
-      if (this.isSharing) {
-        console.log('Location sharing already active');
-        return;
-      }
-
-      // Request background location permissions for continuous tracking
+      if (this.isSharing) return;
       const backgroundStatus = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus.status !== 'granted') {
         console.warn('Background location permission denied - using foreground only');
       }
-
-      // Start watching location changes
       this.locationSubscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000, // Update every 5 seconds
-          distanceInterval: 10, // Update every 10 meters
+          timeInterval: 5000,
+          distanceInterval: 10,
         },
         this.handleLocationUpdate.bind(this)
       );
-
       this.isSharing = true;
       this.notifyShareListeners(true);
-      
-      // Save sharing state
+      try {
+        const uid = await this.getCurrentUserId();
+        if (uid && firestore) {
+          const userRef = doc(firestore, 'users', uid);
+          await setDoc(userRef, { preferences: { locationSharing: true } }, { merge: true });
+        }
+      } catch (e) {
+        console.warn('Failed to persist sharing preference to Firestore:', e?.message || String(e));
+      }
       await AsyncStorage.setItem('isLocationSharing', 'true');
-      
-      console.log('Location sharing started');
       return true;
     } catch (error) {
       console.error('Failed to start location sharing:', error);
@@ -75,14 +78,18 @@ class LocationSharingService {
         this.locationSubscription.remove();
         this.locationSubscription = null;
       }
-
       this.isSharing = false;
       this.notifyShareListeners(false);
-      
-      // Save sharing state
+      try {
+        const uid = await this.getCurrentUserId();
+        if (uid && firestore) {
+          const userRef = doc(firestore, 'users', uid);
+          await setDoc(userRef, { preferences: { locationSharing: false } }, { merge: true });
+        }
+      } catch (e) {
+        console.warn('Failed to persist sharing preference to Firestore:', e?.message || String(e));
+      }
       await AsyncStorage.setItem('isLocationSharing', 'false');
-      
-      console.log('Location sharing stopped');
       return true;
     } catch (error) {
       console.error('Failed to stop location sharing:', error);
@@ -100,58 +107,68 @@ class LocationSharingService {
       heading: locationData.coords.heading,
       speed: locationData.coords.speed,
     };
-
-    // Update current user's location
     this.currentLocation = location;
-    
-    // Notify all location listeners
     this.notifyLocationListeners(location);
-    
-    // Share location with family members (in real app, this would send to server)
     this.shareLocationWithFamily(location);
   }
 
-  // Share location with family members
+  // Share location with family members by writing to Firestore
   async shareLocationWithFamily(location) {
     try {
-      // In a real implementation, this would send location to a server
-      // For demo purposes, we'll simulate sharing with local storage
-      const locationData = {
-        userId: await this.getCurrentUserId(),
-        location: location,
-        timestamp: Date.now(),
-      };
-
-      // Store location update locally (in production, send to server)
+      const uid = await this.getCurrentUserId();
+      if (!uid) return;
+      if (firestore) {
+        const userRef = doc(firestore, 'users', uid);
+        await setDoc(
+          userRef,
+          {
+            liveLocation: {
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracy: location.accuracy ?? null,
+              heading: location.heading ?? null,
+              speed: location.speed ?? null,
+              timestamp: Date.now(),
+            },
+          },
+          { merge: true }
+        );
+      }
       await AsyncStorage.setItem(
-        `user_location_${locationData.userId}`,
-        JSON.stringify(locationData)
+        `user_location_${uid}`,
+        JSON.stringify({ userId: uid, location, timestamp: Date.now() })
       );
-
-      console.log('Location shared with family members');
     } catch (error) {
       console.error('Failed to share location:', error);
     }
   }
 
-  // Add family member for location sharing
+  // Add family member
   async addFamilyMember(memberData) {
     try {
-      const member = {
-        id: memberData.id || Date.now().toString(),
-        name: memberData.name,
-        phone: memberData.phone,
-        relation: memberData.relation,
+      const uid = await this.getCurrentUserId();
+      const normalizedPhone = (memberData.phone || '').replace(/\D/g, '');
+      const newMember = {
+        name: memberData.name?.trim() || '',
+        phone: normalizedPhone,
+        relation: memberData.relation?.trim() || '',
         avatar: memberData.avatar || '👤',
-        isLocationShared: memberData.isLocationShared || false,
+        isLocationShared: !!memberData.isLocationShared,
         lastLocationUpdate: null,
         location: null,
+        createdAt: serverTimestamp(),
       };
-
+      if (uid && firestore) {
+        const famCol = collection(firestore, 'users', uid, 'family');
+        const docRef = await addDoc(famCol, newMember);
+        const member = { id: docRef.id, ...newMember };
+        this.familyMembers.set(member.id, member);
+        await this.saveFamilyMembersLocal();
+        return member;
+      }
+      const member = { id: memberData.id || String(Date.now()), ...newMember };
       this.familyMembers.set(member.id, member);
-      await this.saveFamilyMembers();
-      
-      console.log(`Added family member: ${member.name}`);
+      await this.saveFamilyMembersLocal();
       return member;
     } catch (error) {
       console.error('Failed to add family member:', error);
@@ -162,10 +179,13 @@ class LocationSharingService {
   // Remove family member
   async removeFamilyMember(memberId) {
     try {
+      const uid = await this.getCurrentUserId();
+      if (uid && firestore) {
+        const ref = doc(firestore, 'users', uid, 'family', memberId);
+        await deleteDoc(ref);
+      }
       this.familyMembers.delete(memberId);
-      await this.saveFamilyMembers();
-      
-      console.log(`Removed family member: ${memberId}`);
+      await this.saveFamilyMembersLocal();
       return true;
     } catch (error) {
       console.error('Failed to remove family member:', error);
@@ -179,36 +199,29 @@ class LocationSharingService {
       const member = this.familyMembers.get(memberId);
       if (member) {
         member.isLocationShared = enabled;
-        await this.saveFamilyMembers();
-        
-        console.log(`Location sharing ${enabled ? 'enabled' : 'disabled'} for ${member.name}`);
+        const uid = await this.getCurrentUserId();
+        if (uid && firestore) {
+          const ref = doc(firestore, 'users', uid, 'family', memberId);
+          await setDoc(ref, { isLocationShared: enabled }, { merge: true });
+        }
+        await this.saveFamilyMembersLocal();
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Failed to toggle member location sharing:', error);
+      console.error('Error toggling member location sharing:', error);
       return false;
     }
   }
 
-  // Get family members locations
+  // Get family members + locations (if stored)
   async getFamilyMembersLocations() {
     try {
+      await this.loadFamilyMembers();
       const locations = new Map();
-      
       for (const [memberId, member] of this.familyMembers) {
-        if (member.isLocationShared) {
-          // In production, fetch from server
-          const locationData = await AsyncStorage.getItem(`user_location_${memberId}`);
-          if (locationData) {
-            const parsedData = JSON.parse(locationData);
-            member.location = parsedData.location;
-            member.lastLocationUpdate = parsedData.timestamp;
-          }
-        }
         locations.set(memberId, member);
       }
-      
       return locations;
     } catch (error) {
       console.error('Failed to get family members locations:', error);
@@ -224,7 +237,6 @@ class LocationSharingService {
         maximumAge: 10000,
         timeout: 15000,
       });
-      
       return {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -239,14 +251,11 @@ class LocationSharingService {
     }
   }
 
-  // Send emergency alert with location to all family members
+  // Send emergency alert with location
   async sendEmergencyAlert(alertType = 'emergency', customMessage = '') {
     try {
       const currentLocation = await this.getCurrentLocation();
-      if (!currentLocation) {
-        throw new Error('Unable to get current location');
-      }
-
+      if (!currentLocation) throw new Error('Unable to get current location');
       const alertData = {
         type: alertType,
         location: currentLocation,
@@ -254,15 +263,15 @@ class LocationSharingService {
         timestamp: Date.now(),
         userId: await this.getCurrentUserId(),
       };
-
-      // In production, send to server and notify all family members
-      // For demo, we'll store locally
-      await AsyncStorage.setItem(
-        `emergency_alert_${alertData.timestamp}`,
-        JSON.stringify(alertData)
-      );
-
-      console.log('Emergency alert sent to family members');
+      try {
+        const uid = await this.getCurrentUserId();
+        if (uid && firestore) {
+          const alertsCol = collection(firestore, 'users', uid, 'alerts');
+          await addDoc(alertsCol, { ...alertData, createdAt: serverTimestamp() });
+        }
+      } catch (e) {
+        console.warn('Failed to persist emergency alert to Firestore:', e?.message || String(e));
+      }
       return true;
     } catch (error) {
       console.error('Failed to send emergency alert:', error);
@@ -270,39 +279,30 @@ class LocationSharingService {
     }
   }
 
-  // Location sharing status listeners
+  // Listeners
   addLocationListener(callback) {
     this.locationListeners.add(callback);
     return () => this.locationListeners.delete(callback);
   }
-
   addShareStatusListener(callback) {
     this.shareListeners.add(callback);
     return () => this.shareListeners.delete(callback);
   }
-
   notifyLocationListeners(location) {
-    this.locationListeners.forEach(callback => {
-      try {
-        callback(location);
-      } catch (error) {
-        console.error('Location listener error:', error);
-      }
+    this.locationListeners.forEach((cb) => {
+      try { cb(location); } catch (e) { console.error('Location listener error:', e); }
     });
   }
-
   notifyShareListeners(isSharing) {
-    this.shareListeners.forEach(callback => {
-      try {
-        callback(isSharing);
-      } catch (error) {
-        console.error('Share status listener error:', error);
-      }
+    this.shareListeners.forEach((cb) => {
+      try { cb(isSharing); } catch (e) { console.error('Share status listener error:', e); }
     });
   }
 
-  // Utility methods
+  // Utilities
   async getCurrentUserId() {
+    const u = auth?.currentUser;
+    if (u?.uid) return u.uid;
     let userId = await AsyncStorage.getItem('userId');
     if (!userId) {
       userId = `user_${Date.now()}`;
@@ -313,6 +313,30 @@ class LocationSharingService {
 
   async loadFamilyMembers() {
     try {
+      const u = auth?.currentUser;
+      const uid = u?.uid || await AsyncStorage.getItem('userId');
+      if (uid && firestore) {
+        const famCol = collection(firestore, 'users', uid, 'family');
+        const q = query(famCol, orderBy('createdAt', 'asc'));
+        const snap = await getDocs(q);
+        const next = new Map();
+        snap.forEach((d) => {
+          const data = d.data() || {};
+          next.set(d.id, {
+            id: d.id,
+            name: data.name || '',
+            phone: data.phone || '',
+            relation: data.relation || '',
+            avatar: data.avatar || '👤',
+            isLocationShared: !!data.isLocationShared,
+            lastLocationUpdate: data.lastLocationUpdate || null,
+            location: data.location || null,
+          });
+        });
+        this.familyMembers = next;
+        await this.saveFamilyMembersLocal();
+        return;
+      }
       const membersData = await AsyncStorage.getItem('familyMembers');
       if (membersData) {
         const members = JSON.parse(membersData);
@@ -323,7 +347,7 @@ class LocationSharingService {
     }
   }
 
-  async saveFamilyMembers() {
+  async saveFamilyMembersLocal() {
     try {
       const membersObject = Object.fromEntries(this.familyMembers);
       await AsyncStorage.setItem('familyMembers', JSON.stringify(membersObject));
@@ -332,19 +356,17 @@ class LocationSharingService {
     }
   }
 
-  // Get all family members
+  // Getters
   getFamilyMembers() {
     return Array.from(this.familyMembers.values());
   }
-
-  // Get sharing status
   getSharingStatus() {
     return this.isSharing;
   }
 
-  // Calculate distance between two locations
+  // Utils
   calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in km
+    const R = 6371;
     const dLat = this.toRad(lat2 - lat1);
     const dLon = this.toRad(lon2 - lon1);
     const a =
@@ -354,12 +376,8 @@ class LocationSharingService {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
+  toRad(value) { return (value * Math.PI) / 180; }
 
-  toRad(value) {
-    return (value * Math.PI) / 180;
-  }
-
-  // Cleanup
   cleanup() {
     this.stopLocationSharing();
     this.locationListeners.clear();
@@ -367,5 +385,4 @@ class LocationSharingService {
   }
 }
 
-// Export singleton instance
 export default new LocationSharingService();

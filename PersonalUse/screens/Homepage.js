@@ -16,10 +16,11 @@ import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import PanicButton from '../Components/PanicButton';
+// import { auth } from '../../firebaseConfig';
 import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
 import { MaterialIcons, Feather, AntDesign, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { sendEmergencyAlert } from '../Services/APIService';
+// import { sendEmergencyAlert } from '../Services/APIService';
 
 const Homepage = () => {
   const navigation = useNavigation();
@@ -34,6 +35,7 @@ const Homepage = () => {
   const [showEmergencyOptions, setShowEmergencyOptions] = useState(false);
   const [showSafetyOverlay, setShowSafetyOverlay] = useState(false);
   const [incidentType, setIncidentType] = useState(null);
+  const [showResponseBanner, setShowResponseBanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const mapRef = useRef(null);
@@ -280,7 +282,8 @@ const Homepage = () => {
 
   const sendAlert = async (type) => {
     setIncidentType(type);
-    setShowSafetyOverlay(true);
+    // Mock: do not show full overlay; we'll display a banner instead
+    setShowSafetyOverlay(false);
 
     // Get most recent location
     let coords = location;
@@ -295,44 +298,20 @@ const Homepage = () => {
         coords = mapRegion; // Fallback to map region
       }
     }
-
-    // TODO: replace with authenticated user id
-    const userId = 'demo-user';
-    
-    const serviceMessages = {
-      'POLICE': 'Police have been notified and are responding to your location.',
-      'AMBULANCE': 'Emergency medical services have been dispatched to your location.',
-      'PRIVATE_SECURITY': 'Private security has been alerted and is en route.',
-      'CPF': 'Community Protection Force has been notified and is responding.',
-      'MEDICAL': 'Medical emergency alert sent to responders.',
-      'SECURITY': 'Security threat alert sent to authorities.',
-      'HELP': 'General help request sent to emergency contacts.',
-      'SOS': 'SOS alert sent to all emergency services.'
-    };
-    
-    try {
-      const result = await sendEmergencyAlert(userId, type, coords);
-      if (result?.success) {
-        Alert.alert(
-          'Emergency Alert Sent', 
-          serviceMessages[type] || 'Responders have been notified.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Network Issue', 
-          'We could not reach the server. Your alert is queued and will be sent when connection is restored.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (e) {
-      Alert.alert(
-        'Error', 
-        'Unable to send alert. Please check your connection and try again.',
-        [{ text: 'OK' }]
-      );
-    }
+    // Mock: no API call or auth required; just confirm and show a banner
+    Alert.alert(
+      'Emergency on the way',
+      'Responders have been notified and are on their way.',
+      [{ text: 'OK', onPress: () => setShowResponseBanner(true) }]
+    );
   };
+
+  // Auto-hide the response banner after a few seconds
+  useEffect(() => {
+    if (!showResponseBanner) return;
+    const t = setTimeout(() => setShowResponseBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showResponseBanner]);
 
   const toggleBottomSheet = () => {
     const newExpanded = !isExpanded;
@@ -358,6 +337,15 @@ const Homepage = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F4F7FA" />
+      {/* Temporary response banner */}
+      {showResponseBanner && (
+        <View style={styles.responseBannerContainer} pointerEvents="none">
+          <View style={styles.responseBanner}>
+            <MaterialIcons name="notifications-active" size={18} color="#1F2937" />
+            <Text style={styles.responseBannerText}>Response on the way</Text>
+          </View>
+        </View>
+      )}
       
       <MapView
         ref={mapRef}
@@ -540,8 +528,10 @@ const Homepage = () => {
                   onPress={() => handleEmergencyServiceSelect('POLICE')}
                 >
                   <MaterialIcons name="local-police" size={32} color="#FFFFFF" />
-                  <Text style={styles.emergencyServiceTitle}>Police</Text>
-                  <Text style={styles.emergencyServiceSubtitle}>Crime, violence, theft</Text>
+                  <View style={styles.emergencyServiceTextWrap}>
+                    <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Police</Text>
+                    <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Crime, violence, theft</Text>
+                  </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -549,8 +539,10 @@ const Homepage = () => {
                   onPress={() => handleEmergencyServiceSelect('AMBULANCE')}
                 >
                   <MaterialIcons name="medical-services" size={32} color="#FFFFFF" />
-                  <Text style={styles.emergencyServiceTitle}>Medical</Text>
-                  <Text style={styles.emergencyServiceSubtitle}>Medical emergency</Text>
+                  <View style={styles.emergencyServiceTextWrap}>
+                    <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Medical</Text>
+                    <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Medical emergency</Text>
+                  </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -558,8 +550,10 @@ const Homepage = () => {
                   onPress={() => handleEmergencyServiceSelect('PRIVATE_SECURITY')}
                 >
                   <MaterialIcons name="security" size={32} color="#FFFFFF" />
-                  <Text style={styles.emergencyServiceTitle}>Private Gaurd</Text>
-                  <Text style={styles.emergencyServiceSubtitle}>Private security</Text>
+                  <View style={styles.emergencyServiceTextWrap}>
+                    <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Private Guard</Text>
+                    <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Private security</Text>
+                  </View>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -567,8 +561,10 @@ const Homepage = () => {
                   onPress={() => handleEmergencyServiceSelect('CPF')}
                 >
                   <MaterialIcons name="groups" size={32} color="#FFFFFF" />
-                  <Text style={styles.emergencyServiceTitle}>CPF</Text>
-                  <Text style={styles.emergencyServiceSubtitle}>Community protection</Text>
+                  <View style={styles.emergencyServiceTextWrap}>
+                    <Text style={styles.emergencyServiceTitle} numberOfLines={1}>CPF</Text>
+                    <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Community protection</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
 
@@ -924,6 +920,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 8,
   },
+  emergencyServiceTextWrap: {
+    marginLeft: 16,
+    flex: 1,
+  },
   policeButton: {
     backgroundColor: '#1E40AF', // Blue for police
   },
@@ -938,16 +938,13 @@ const styles = StyleSheet.create({
   },
   emergencyServiceTitle: {
     fontSize: 18,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#FFFFFF',
-    marginLeft: 19,
-    flex: 1,
   },
   emergencyServiceSubtitle: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginLeft: 16,
-    flex: 2,
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginTop: 2,
   },
   emergencyCancelButton: {
     width: '100%',
@@ -962,6 +959,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#6B7280',
   },
+  // Response banner styles
+  responseBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 60 : 90,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 11,
+  },
+  responseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(191, 219, 254, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    gap: 8,
+  },
+  responseBannerText: { fontSize: 13, fontWeight: '700', color: '#1F2937' },
   dragHandleArea: {
     alignItems: 'center',
     paddingVertical: 10,

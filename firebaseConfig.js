@@ -7,7 +7,8 @@ import {
   getReactNativePersistence,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { getStorage } from 'firebase/storage';
+import { getDatabase } from 'firebase/database'; // Realtime DB
 
 // Prefer config injected by app.config.js (from .env) so dev, preview, and prod stay consistent
 const extra = Constants?.expoConfig?.extra ?? Constants?.manifest?.extra ?? {};
@@ -49,7 +50,10 @@ try {
 // Firestore (for user/personal data)
 const firestore = getFirestore(app);
 
-// Realtime Database (for business/real-time data)
+// Storage (for avatars and media)
+const storage = getStorage(app);
+
+// Realtime Database (for business data)
 const realtimeDB = getDatabase(app);
 
-export { auth, firestore, realtimeDB };
+export { auth, firestore, realtimeDB, storage };

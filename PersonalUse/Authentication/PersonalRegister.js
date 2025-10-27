@@ -5,10 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Image,
   Alert,
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from "react-native-vector-icons/Ionicons";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   logo: {
     width: 90,
     height: 90,
-    borderRadius: 45,
+    borderRadius: 25,
     marginBottom: 10,
   },
   title: {

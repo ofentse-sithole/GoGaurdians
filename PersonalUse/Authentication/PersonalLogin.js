@@ -5,11 +5,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Image,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
+import { Linking, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from "react-native-vector-icons/Ionicons";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../../firebaseConfig"; // ✅ import firebase setup
@@ -19,6 +21,27 @@ export default function PersonalLogin({ navigation }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const defaultUssd = '*112#';
+
+  const dialUSSD = async (code = defaultUssd) => {
+    try {
+      // iOS generally blocks USSD; show a gentle heads-up
+      if (Platform.OS === 'ios') {
+        Alert.alert('Note', 'USSD may not be supported on iOS devices.');
+      }
+      const encoded = code.replace(/#/g, '%23');
+      const url = `tel:${encoded}`;
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
+        Alert.alert('Not supported', 'USSD is not supported on this device.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      console.warn('USSD dial failed:', e);
+      Alert.alert('Failed', 'Could not open dialer for USSD.');
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -39,8 +62,11 @@ export default function PersonalLogin({ navigation }) {
 
       Alert.alert("Login Successful", `Welcome back, ${user.email}!`);
 
-      // ✅ Navigate to your desired screen after login
-      navigation.navigate("Dashboard"); // change "Dashboard" to your actual screen
+      // ✅ No manual navigate needed: the auth state listener in App.js
+      // switches the navigator to the authenticated stack (PersonalApp).
+      // If you prefer explicit navigation after the state flips, target 'PersonalApp'.
+      // Example (after a short delay):
+      // setTimeout(() => navigation.reset({ index: 0, routes: [{ name: 'PersonalApp' }] }), 0);
     } catch (error) {
       console.error("Login Error:", error);
       let message = "An error occurred during login.";
@@ -69,82 +95,93 @@ export default function PersonalLogin({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.logoContainer}>
-        <Image
-          source={require("../../assets/images/GoGraurdianLogo-removebg-preview.png")}
-          style={styles.logo}
-        />
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Login to continue</Text>
-      </View>
-
-      <View style={styles.formContainer}>
-        {/* Email Field */}
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email"
-          placeholderTextColor="#aaa"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-        />
-
-        {/* Password Field */}
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.passwordContainer}>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="Enter your password"
-            placeholderTextColor="#aaa"
-            secureTextEntry={!showPassword}
-            value={password}
-            onChangeText={setPassword}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../assets/images/GoGraurdianLogo-removebg-preview.png")}
+            style={styles.logo}
           />
-          <TouchableOpacity
-            onPress={() => setShowPassword(!showPassword)}
-            style={styles.eyeIcon}
-          >
-            <Icon
-              name={showPassword ? "eye" : "eye-off"}
-              size={22}
-              color="#666"
-            />
-          </TouchableOpacity>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Login to continue</Text>
         </View>
 
-        {/* Forgot Password Link */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate("PersonalForgotPassword")}
-          style={styles.forgotContainer}
-        >
-          <Text style={styles.forgotText}>Forgot Password?</Text>
-        </TouchableOpacity>
+        <View style={styles.formContainer}>
+          {/* Email Field */}
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your email"
+            placeholderTextColor="#aaa"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+          />
 
-        {/* Login Button */}
-        <TouchableOpacity
-          onPress={handleLogin}
-          style={[styles.loginButton, loading && { opacity: 0.7 }]}
-          activeOpacity={0.8}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.loginText}>Login</Text>
-          )}
-        </TouchableOpacity>
+          {/* Password Field */}
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Enter your password"
+              placeholderTextColor="#aaa"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeIcon}
+            >
+              <Icon
+                name={showPassword ? "eye" : "eye-off"}
+                size={22}
+                color="#666"
+              />
+            </TouchableOpacity>
+          </View>
 
-        {/* Register Link */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate("PersonalRegister")}
-          style={styles.registerContainer}
-        >
-          <Text style={styles.registerText}>
-            Don’t have an account? <Text style={styles.link}>Sign up</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
+          {/* Forgot Password Link */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate("PersonalForgotPassword")}
+            style={styles.forgotContainer}
+          >
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          {/* Login Button */}
+          <TouchableOpacity
+            onPress={handleLogin}
+            style={[styles.loginButton, loading && { opacity: 0.7 }]}
+            activeOpacity={0.8}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginText}>Login</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Register Link */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate("PersonalRegister")}
+            style={styles.registerContainer}
+          >
+            <Text style={styles.registerText}>
+              Don’t have an account? <Text style={styles.link}>Sign up</Text>
+            </Text>
+          </TouchableOpacity>
+
+          {/* USSD Quick Action */}
+          <TouchableOpacity
+            onPress={() => dialUSSD()}
+            style={styles.ussdButton}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.ussdText}>Dial USSD ({defaultUssd})</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -156,6 +193,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 20,
   },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
   logoContainer: {
     alignItems: "center",
     marginBottom: 40,
@@ -163,7 +205,7 @@ const styles = StyleSheet.create({
   logo: {
     width: 90,
     height: 90,
-    borderRadius: 45,
+    borderRadius: 25,
     marginBottom: 10,
   },
   title: {
@@ -245,5 +287,18 @@ const styles = StyleSheet.create({
   link: {
     color: "#007bff",
     fontWeight: "600",
+  },
+  ussdButton: {
+    marginTop: 16,
+    borderColor: '#007bff',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  ussdText: {
+    color: '#007bff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

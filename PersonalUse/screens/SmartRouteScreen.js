@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, Linking, StatusBar, TextInput, ActivityIndicator, Animated, PanResponder, Dimensions } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Alert, Platform, Linking, StatusBar, TextInput, ActivityIndicator, Animated, PanResponder, Dimensions, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import PanicButton from '../Components/PanicButton';
+import SafetyAssistantOverlay from '../Components/SafetyAssistantOverlay';
+// import { sendEmergencyAlert } from '../Services/APIService';
+import { auth } from '../../firebaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
@@ -54,6 +57,14 @@ const SmartRouteScreen = () => {
   const searchTimer = useRef(null);
   const sessionTokenRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [mode, setMode] = useState('walking'); // 'walking' | 'driving'
+  // SOS workflow state (match Homepage behavior)
+  const [showEmergencyOptions, setShowEmergencyOptions] = useState(false);
+  const [showSafetyOverlay, setShowSafetyOverlay] = useState(false);
+  const [incidentType, setIncidentType] = useState(null);
+  const [showResponseBanner, setShowResponseBanner] = useState(false);
+  const [showDoubleTapBanner, setShowDoubleTapBanner] = useState(true);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const lastTapRef = useRef({ t: 0, coord: null });
   // Bottom sheet drag state
   const { height: SCREEN_HEIGHT } = Dimensions.get('window');
   const COLLAPSED_OFFSET = useMemo(() => {
@@ -97,7 +108,7 @@ const SmartRouteScreen = () => {
         sheetOffset.setValue(next);
       },
       onPanResponderRelease: (_, gesture) => {
-        // Treat a tiny movement as a tap to toggle
+        // Treat a tiny movement as a tap to toggle (like Home screen UX)
         const isTap = Math.abs(gesture.dy) < 5 && Math.abs(gesture.dx) < 5;
         if (isTap) {
           animateSheet(!isExpanded);
@@ -205,6 +216,110 @@ const SmartRouteScreen = () => {
         }),
       }))
     );
+  };
+
+  // SOS: animate button and open emergency options
+  const handlePanicPress = () => {
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 0.9, duration: 100, useNativeDriver: true }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
+    setShowEmergencyOptions(true);
+  };
+
+  const handleEmergencyServiceSelect = (serviceType) => {
+    setShowEmergencyOptions(false);
+    const serviceNames = {
+      POLICE: 'Police',
+      AMBULANCE: 'Ambulance',
+      PRIVATE_SECURITY: 'Private Security',
+      CPF: 'Community Protection Force (CPF)'
+    };
+    Alert.alert(
+      `${serviceNames[serviceType]} Emergency`,
+      `Are you sure you want to alert ${serviceNames[serviceType]}? This will send your location and emergency details.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => setShowEmergencyOptions(true) },
+        { text: `Alert ${serviceNames[serviceType]}`, style: 'destructive', onPress: () => sendAlert(serviceType) },
+      ]
+    );
+  };
+
+  const sendAlert = async (type) => {
+    setIncidentType(type);
+    // Mock flow: don't show the full safety overlay; we'll show a banner after confirmation
+    setShowSafetyOverlay(false);
+
+    // Obtain most recent location
+    let coords = origin || region;
+    try {
+      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      coords = { latitude: currentLocation.coords.latitude, longitude: currentLocation.coords.longitude };
+      setOrigin(coords);
+    } catch (e) {
+      // fallback to existing coords
+    }
+
+    // Mock: Don't call API or require auth; just confirm then show banner on screen
+    Alert.alert('Emergency on the way', 'Responders have been notified and are on their way.', [
+      { text: 'OK', onPress: () => setShowResponseBanner(true) },
+    ]);
+  };
+
+  // Auto-hide the response banner after a few seconds
+  useEffect(() => {
+    if (!showResponseBanner) return;
+    const t = setTimeout(() => setShowResponseBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showResponseBanner]);
+
+  // Double-tap to select destination: detect two taps within a short window
+  const handleMapPress = (e) => {
+    const now = Date.now();
+    const { coordinate } = e.nativeEvent || {};
+    if (!coordinate) return;
+    if (now - (lastTapRef.current.t || 0) < 300) {
+      setDestination(coordinate);
+      setShowDoubleTapBanner(false);
+    }
+    lastTapRef.current = { t: now, coord: coordinate };
+  };
+
+  // Auto-hide the double-tap instruction banner after a short delay on first open
+  useEffect(() => {
+    if (!showDoubleTapBanner) return;
+    const t = setTimeout(() => setShowDoubleTapBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showDoubleTapBanner]);
+
+  // Center map on user's current location and update origin/region
+  const centerMapOnUser = async () => {
+    try {
+      setLoadingLocation(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Location needed', 'Enable location to recenter the map.');
+        setLoadingLocation(false);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({});
+      const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setOrigin(coords);
+      const nextRegion = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      setRegion(nextRegion);
+      if (mapRef.current && typeof mapRef.current.animateToRegion === 'function') {
+        mapRef.current.animateToRegion(nextRegion, 500);
+      }
+      setLoadingLocation(false);
+    } catch (e) {
+      setLoadingLocation(false);
+      Alert.alert('Location error', 'Unable to fetch your current location.');
+    }
   };
 
   // Debounced Places Autocomplete suggestions
@@ -348,12 +463,31 @@ const SmartRouteScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F4F7FA" />
+      {/* Temporary response banner */}
+      {showResponseBanner && (
+        <View style={styles.responseBannerContainer} pointerEvents="none">
+          <View style={styles.responseBanner}>
+            <MaterialIcons name="notifications-active" size={18} color="#1F2937" />
+            <Text style={styles.responseBannerText}>Response on the way</Text>
+          </View>
+        </View>
+      )}
+      {/* Instruction banner: double tap */}
+      {showDoubleTapBanner && (
+        <View style={styles.instructionBannerContainer} pointerEvents="box-none">
+          <View style={styles.instructionBanner}>
+            <MaterialIcons name="touch-app" size={18} color="#0F172A" />
+            <Text style={styles.instructionBannerText}>Double tap on the map to select destination</Text>
+          </View>
+        </View>
+      )}
       <MapView
         ref={mapRef}
         style={styles.map}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={region}
         onRegionChangeComplete={setRegion}
+        onPress={handleMapPress}
         showsUserLocation
         showsMyLocationButton
         onLongPress={(e) => setDestination(e.nativeEvent.coordinate)}
@@ -379,12 +513,28 @@ const SmartRouteScreen = () => {
           <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Smart Route</Text>
-        <View style={styles.headerButtonSpacer} />
+        <TouchableOpacity style={styles.headerButton} onPress={centerMapOnUser}>
+          <MaterialIcons name="my-location" size={24} color="#333" />
+        </TouchableOpacity>
       </View>
 
       {/* Bottom sheet */}
       <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetOffset }] }]}>
-        <View style={styles.sheetHandle} {...panResponder.panHandlers} />
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.handleContainer}
+          onPress={() => animateSheet(!isExpanded)}
+          {...panResponder.panHandlers}
+        >
+          <MaterialIcons
+            name={isExpanded ? 'expand-less' : 'expand-more'}
+            size={26}
+            color="#007AFF"
+          />
+          <Text style={styles.dragHint}>
+            {isExpanded ? 'Press down to collapse' : 'Press up for more options'}
+          </Text>
+        </TouchableOpacity>
         {/* Search row */}
         <View style={styles.searchRow}>
           <MaterialIcons name="place" size={20} color="#007AFF" />
@@ -527,6 +677,30 @@ const SmartRouteScreen = () => {
           </Text>
         </View>
 
+        {isExpanded && (
+          <View style={styles.moreOptionsRow}>
+            <TouchableOpacity
+              style={styles.moreOptionBtn}
+              onPress={fitMap}
+            >
+              <MaterialIcons name="center-focus-strong" size={18} color="#111827" />
+              <Text style={styles.moreOptionText}>Recenter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.moreOptionBtn}
+              onPress={() => {
+                setDestination(null);
+                setRouteCoords([]);
+                setRouteInfo(null);
+                setQuery('');
+              }}
+            >
+              <MaterialIcons name="clear" size={18} color="#111827" />
+              <Text style={styles.moreOptionText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={[styles.navigateBtn, !destination && styles.btnDisabled]}
@@ -539,29 +713,7 @@ const SmartRouteScreen = () => {
 
           <TouchableOpacity
             style={styles.locateBtn}
-            onPress={async () => {
-              try {
-                setLoadingLocation(true);
-                const pos = await Location.getCurrentPositionAsync({});
-                const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-                setOrigin(coords);
-                // Focus the map on the user's current location with a closer zoom
-                const nextRegion = {
-                  latitude: coords.latitude,
-                  longitude: coords.longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
-                };
-                setRegion(nextRegion);
-                if (mapRef.current && typeof mapRef.current.animateToRegion === 'function') {
-                  mapRef.current.animateToRegion(nextRegion, 500);
-                }
-                setLoadingLocation(false);
-              } catch {
-                setLoadingLocation(false);
-                Alert.alert('Location error', 'Unable to fetch your current location.');
-              }
-            }}
+            onPress={centerMapOnUser}
           >
             <MaterialIcons name="my-location" size={18} color="#007AFF" />
             <Text style={styles.locateText}>{loadingLocation ? 'Locating…' : 'Use my location'}</Text>
@@ -569,10 +721,93 @@ const SmartRouteScreen = () => {
         </View>
 
         <View style={styles.panicContainer}>
-          <PanicButton onPress={() => Alert.alert('SOS', 'Emergency workflow coming from Home screen.')} />
+          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <PanicButton onPress={handlePanicPress} />
+          </Animated.View>
           <Text style={styles.panicHint}>Press for emergency</Text>
         </View>
       </Animated.View>
+      {showSafetyOverlay && (
+        <SafetyAssistantOverlay
+          isEmergency={incidentType !== null}
+          incidentType={incidentType}
+          userLocation={origin || region}
+          onClose={() => setShowSafetyOverlay(false)}
+        />
+      )}
+
+      <Modal
+        visible={showEmergencyOptions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEmergencyOptions(false)}
+      >
+        <View style={styles.emergencyModalOverlay}>
+          <SafeAreaView style={styles.emergencyModalContainer}>
+            <View style={styles.emergencyModalContent}>
+              <View style={styles.emergencyModalHeader}>
+                <MaterialIcons name="warning" size={32} color="#EF4444" />
+                <Text style={styles.emergencyModalTitle}>Emergency Services</Text>
+                <Text style={styles.emergencyModalSubtitle}>
+                  Select the appropriate emergency service for your situation
+                </Text>
+              </View>
+
+               <View style={styles.emergencyServicesGrid}>
+                              <TouchableOpacity
+                                style={[styles.emergencyServiceButton, styles.policeButton]}
+                                onPress={() => handleEmergencyServiceSelect('POLICE')}
+                              >
+                                <MaterialIcons name="local-police" size={32} color="#FFFFFF" />
+                                <View style={styles.emergencyServiceTextWrap}>
+                                  <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Police</Text>
+                                  <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Crime, violence, theft</Text>
+                                </View>
+                              </TouchableOpacity>
+              
+                              <TouchableOpacity
+                                style={[styles.emergencyServiceButton, styles.ambulanceButton]}
+                                onPress={() => handleEmergencyServiceSelect('AMBULANCE')}
+                              >
+                                <MaterialIcons name="medical-services" size={32} color="#FFFFFF" />
+                                <View style={styles.emergencyServiceTextWrap}>
+                                  <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Medical</Text>
+                                  <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Medical emergency</Text>
+                                </View>
+                              </TouchableOpacity>
+              
+                              <TouchableOpacity
+                                style={[styles.emergencyServiceButton, styles.securityButton]}
+                                onPress={() => handleEmergencyServiceSelect('PRIVATE_SECURITY')}
+                              >
+                                <MaterialIcons name="security" size={32} color="#FFFFFF" />
+                                <View style={styles.emergencyServiceTextWrap}>
+                                  <Text style={styles.emergencyServiceTitle} numberOfLines={1}>Private Guard</Text>
+                                  <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Private security</Text>
+                                </View>
+                              </TouchableOpacity>
+              
+                              <TouchableOpacity
+                                style={[styles.emergencyServiceButton, styles.cpfButton]}
+                                onPress={() => handleEmergencyServiceSelect('CPF')}
+                              >
+                                <MaterialIcons name="groups" size={32} color="#FFFFFF" />
+                                <View style={styles.emergencyServiceTextWrap}>
+                                  <Text style={styles.emergencyServiceTitle} numberOfLines={1}>CPF</Text>
+                                  <Text style={styles.emergencyServiceSubtitle} numberOfLines={1}>Community protection</Text>
+                                </View>
+                              </TouchableOpacity>
+                            </View>
+              <TouchableOpacity
+                style={styles.emergencyCancelButton}
+                onPress={() => setShowEmergencyOptions(false)}
+              >
+                <Text style={styles.emergencyCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -619,14 +854,34 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     paddingHorizontal: 20,
   },
+  sheetHeaderWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  handleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
   sheetHandle: {
-    width: 40,
-    height: 5,
-    borderRadius: 2.5,
+    width: 48,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#D1D5DB',
     alignSelf: 'center',
     marginBottom: 12,
   },
+  collapseBtn: {
+    position: 'absolute',
+    right: 0,
+    padding: 6,
+  },
+  pullHint: { textAlign: 'center', color: '#6B7280', fontSize: 12, marginBottom: 8 },
+  dragHint: { textAlign: 'center', color: '#6B7280', fontSize: 12 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,6 +976,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 14,
   },
+  moreOptionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+  },
+  moreOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  moreOptionText: { color: '#111827', fontWeight: '600', fontSize: 12 },
   navigateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -770,6 +1043,85 @@ const styles = StyleSheet.create({
   },
   modeText: { color: '#374151', fontSize: 12, fontWeight: '600' },
   modeTextActive: { color: '#FFFFFF' },
+  // Emergency modal styles
+  emergencyModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emergencyModalContainer: {
+    width: '100%',
+    maxWidth: 400,
+  },
+  emergencyModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emergencyModalHeader: { alignItems: 'center', marginBottom: 24 },
+  emergencyModalTitle: { fontSize: 24, fontWeight: '800', color: '#1F2937', marginTop: 12, textAlign: 'center' },
+  emergencyModalSubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  emergencyServicesGrid: { width: '100%', gap: 12, marginBottom: 24 },
+  emergencyServiceButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderRadius: 16, marginBottom: 8 },
+  emergencyServiceTextWrap: { marginLeft: 16, flex: 1 },
+  policeButton: { backgroundColor: '#1E40AF' },
+  ambulanceButton: { backgroundColor: '#EF4444' },
+  securityButton: { backgroundColor: '#7C3AED' },
+  cpfButton: { backgroundColor: '#059669' },
+  emergencyServiceTitle: { fontSize: 18, fontWeight: '500', color: '#FFFFFF', marginLeft: 19, flex: 1 },
+  emergencyServiceSubtitle: { fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', marginLeft: 16, flex: 2 },
+  emergencyCancelButton: { width: '100%', paddingVertical: 14, borderRadius: 12, borderWidth: 2, borderColor: '#E5E7EB', alignItems: 'center' },
+  emergencyCancelText: { fontSize: 16, fontWeight: '600', color: '#6B7280' },
+  // Response banner styles
+  responseBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 60 : 90,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 11,
+  },
+  responseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(191, 219, 254, 0.95)', // light blue
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    gap: 8,
+  },
+  responseBannerText: { fontSize: 13, fontWeight: '700', color: '#1F2937' },
+  instructionBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 70 : 120,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 11,
+  },
+  instructionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    gap: 8,
+  },
+  instructionBannerText: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
 });
 
 export default SmartRouteScreen;
@@ -808,3 +1160,7 @@ function decodePolyline(encoded) {
   }
   return path;
 }
+
+// Emergency Service Options Modal and Safety Overlay
+// Modal
+// Rendered after the main component return for clarity

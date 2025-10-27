@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, Share, Alert, Platform } from 'react-native';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Linking, Share, Alert, Platform, StatusBar } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,7 +7,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { assessThreatLevel, getGuidance } from '../Services/AISafetyService';
 import * as Location from 'expo-location';
-import { auth } from '../../firebaseConfig';
+// import { auth } from '../../firebaseConfig';
 
 const threatSchema = z.object({
   surroundings: z.string().min(10, 'Please describe your surroundings in more detail.'),
@@ -25,6 +25,7 @@ export default function AISafetyAssistantScreen({ navigation }) {
   const [isAssessing, setIsAssessing] = useState(false);
   const [isGuiding, setIsGuiding] = useState(false);
   const [sendingSOS, setSendingSOS] = useState(false);
+  const [showResponseBanner, setShowResponseBanner] = useState(false);
   const lastAssessAt = useRef(0);
   const lastGuideAt = useRef(0);
 
@@ -188,29 +189,36 @@ export default function AISafetyAssistantScreen({ navigation }) {
   };
 
   const sendSOS = async () => {
+    // Mock: Do not call backend or require auth; show quick confirmation
     try {
       setSendingSOS(true);
-      const userId = auth?.currentUser?.uid || 'anonymous';
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Location permission is required to send an alert.');
-        return;
-      }
-      const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const { sendEmergencyAlert } = await import('../Services/APIService');
-      const res = await sendEmergencyAlert(userId, 'Emergency', coords);
-      if (res?.success) {
-        Alert.alert('SOS sent', 'Emergency responders have been notified. Stay safe.');
-      } else {
-        Alert.alert('SOS failed', 'Could not send your alert. Try calling emergency services.');
-      }
+      // Try to get location (optional), but don't block if denied
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        }
+      } catch {}
+      // Simulate quick send
+      setTimeout(() => {
+        Alert.alert('Emergency on the way', 'Responders have been notified and are on their way.', [
+          { text: 'OK', onPress: () => setShowResponseBanner(true) },
+        ]);
+        setSendingSOS(false);
+      }, 500);
     } catch (e) {
       console.error('sendSOS error', e);
-      Alert.alert('SOS failed', 'An unexpected error occurred.');
-    } finally {
       setSendingSOS(false);
+      Alert.alert('SOS failed', 'An unexpected error occurred.');
     }
   };
+
+  // Auto-hide the response banner after a few seconds
+  useEffect(() => {
+    if (!showResponseBanner) return;
+    const t = setTimeout(() => setShowResponseBanner(false), 6000);
+    return () => clearTimeout(t);
+  }, [showResponseBanner]);
 
   const ThreatIcon = ({ level }) => {
     const map = {
@@ -237,6 +245,15 @@ export default function AISafetyAssistantScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Temporary response banner */}
+      {showResponseBanner && (
+        <View style={styles.responseBannerContainer} pointerEvents="none">
+          <View style={styles.responseBanner}>
+            <MaterialIcons name="notifications-active" size={18} color="#1F2937" />
+            <Text style={styles.responseBannerText}>Response on the way</Text>
+          </View>
+        </View>
+      )}
       <View style={styles.header}>
         <TouchableOpacity
           accessibilityLabel="Go back"
@@ -493,4 +510,28 @@ const styles = StyleSheet.create({
   emergencyBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   calloutWarn: { backgroundColor: '#FEF3C7', borderColor: '#FCD34D', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 },
   calloutWarnText: { color: '#92400E' },
+  // Response banner styles
+  responseBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 60 : 90,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 11,
+  },
+  responseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(191, 219, 254, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    gap: 8,
+  },
+  responseBannerText: { fontSize: 13, fontWeight: '700', color: '#1F2937' },
 });

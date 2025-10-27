@@ -78,13 +78,8 @@ export default function BusinessLogin({ navigation }) {
       await set(ref(realtimeDB, `businessUsers/${user.uid}/loginCount`), (businessData.loginCount || 0) + 1);
 
       console.log('Business login successful:', user.email, businessData.companyName);
-      
-      // Navigate to business dashboard
-      // TODO: Replace 'PersonalApp' with actual business app route once available
-      navigation?.reset({
-        index: 0,
-        routes: [{ name: 'PersonalApp' }],
-      });
+      // Do not manually navigate. The global auth listener in App.js will switch
+      // the navigator to the authenticated stack automatically.
       
     } catch (error) {
       console.error('Business login error:', error);
