@@ -1,6 +1,9 @@
 import 'react-native-gesture-handler';
+import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
 import PersonalLogin from "./PersonalUse/Authentication/PersonalLogin";
 import PersonalRegister from "./PersonalUse/Authentication/PersonalRegister";
 import PersonalForgotPassword from "./PersonalUse/Authentication/PersonalForgotPassword";
@@ -18,18 +21,51 @@ const App = () => {
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator initialRouteName="PersonalLogin">
-        <Stack.Screen name="PersonalLogin" component={PersonalLogin} options={{ headerShown: false }} />
-        <Stack.Screen name="PersonalRegister" component={PersonalRegister} options={{ headerShown: false }} />
-        <Stack.Screen name="PersonalForgotPassword" component={PersonalForgotPassword} options={{ headerShown: false }} />
-        <Stack.Screen name="BusinessLogin" component={BusinessLogin} options={{ headerShown: false }} />
-        <Stack.Screen name="BusinessRegister" component={BusinessRegister} options={{ headerShown: false }} />
-        <Stack.Screen name="BusinessForgotPassword" component={BusinessForgotPassword} options={{ headerShown: false }} />
-        <Stack.Screen name="CommunitySafetyAlerts" component={CommunitySafetyAlerts} options={{ headerShown: false }} />
-        <Stack.Screen name="EmergencyContacts" component={EmergencyContactList} options={{ headerShown: true, title: 'Emergency Contacts' }} />
-      </Stack.Navigator>
-      <EmergencyButton />
-    </NavigationContainer>
+          <Stack.Screen 
+            name="PersonalLogin" 
+            component={PersonalLogin} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="PersonalRegister" 
+            component={PersonalRegister} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="PersonalForgotPassword" 
+            component={PersonalForgotPassword} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="BusinessLogin" 
+            component={BusinessLogin} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="BusinessRegister" 
+            component={BusinessRegister} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="BusinessForgotPassword" 
+            component={BusinessForgotPassword} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="CommunitySafetyAlerts" 
+            component={CommunitySafetyAlerts} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="EmergencyContacts" 
+            component={EmergencyContactList} 
+            options={{ headerShown: true, title: 'Emergency Contacts' }} 
+          />
+        </Stack.Navigator>
+        <EmergencyButton />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
-}
+};
 
 export default App;
