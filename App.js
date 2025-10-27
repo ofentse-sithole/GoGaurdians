@@ -7,12 +7,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import PersonalLogin from "./PersonalUse/Authentication/PersonalLogin";
 import PersonalRegister from "./PersonalUse/Authentication/PersonalRegister";
 import PersonalForgotPassword from "./PersonalUse/Authentication/PersonalForgotPassword";
-import BusinessLogin from "./BusinessUse/Authentication/BusinessLogin";
-import BusinessRegister from "./BusinessUse/Authentication/BusinessRegister";
-import BusinessForgotPassword from "./BusinessUse/Authentication/BusinessForgotPassword";
-import CommunitySafetyAlerts from "./components/CommunitySafetyAlerts";
-import EmergencyButton from "./components/EmergencyButton";
-import EmergencyContactList from "./components/EmergencyContactList";
+import GatedPersonalApp from "./PersonalUse/screens/Homepage";
+import AISafetyAssistantScreen from "./PersonalUse/screens/AISafetyAssistantScreen";
 
 const Stack = createStackNavigator();
 
@@ -37,32 +33,16 @@ const App = () => {
             options={{ headerShown: false }} 
           />
           <Stack.Screen 
-            name="BusinessLogin" 
-            component={BusinessLogin} 
+            name="PersonalApp" 
+            component={GatedPersonalApp} 
             options={{ headerShown: false }} 
           />
           <Stack.Screen 
-            name="BusinessRegister" 
-            component={BusinessRegister} 
+            name="AIAssistant" 
+            component={AISafetyAssistantScreen} 
             options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="BusinessForgotPassword" 
-            component={BusinessForgotPassword} 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="CommunitySafetyAlerts" 
-            component={CommunitySafetyAlerts} 
-            options={{ headerShown: false }} 
-          />
-          <Stack.Screen 
-            name="EmergencyContacts" 
-            component={EmergencyContactList} 
-            options={{ headerShown: true, title: 'Emergency Contacts' }} 
           />
         </Stack.Navigator>
-        <EmergencyButton />
       </NavigationContainer>
     </SafeAreaProvider>
   );
